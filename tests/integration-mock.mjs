@@ -1,0 +1,40 @@
+// Run with: node tests/integration-mock.mjs
+// This is NOT a substitute for an actual Foundry runtime integration test.
+import assert from 'node:assert/strict';
+import { fileURLToPath } from 'node:url';
+const noop=()=>{};
+class Base { static get defaultOptions(){return {}}; static get DEFAULT_OPTIONS(){return {}}; }
+const clone=x=>JSON.parse(JSON.stringify(x));
+const props=(obj,p)=>p?.split('.').reduce((x,k)=>x?.[k],obj);
+let i=0;
+globalThis.foundry={utils:{getProperty:props,deepClone:clone,mergeObject:(a,b)=>({...a,...b}),randomID:()=>`testid${++i}`,escapeHTML:s=>s},appv1:{api:{FormApplication:Base,Application:Base}},applications:{api:{ApplicationV2:Base,HandlebarsApplicationMixin:x=>x}}};
+globalThis.FormApplication=Base;
+globalThis.Hooks={on:noop,once:noop,callAll:noop};
+const store=new Map([['pf1e-combat-stats.currentCombatData',{}],['pf1e-combat-stats.combatHistory',[]],['pf1e-combat-stats.strictHealing',true],['pf1e-combat-stats.includeSoakInTotal',true],['pf1e-combat-stats.enabled',true],['pf1e-combat-stats.vigorPath','system.attributes.vigor.value'],['pf1e-combat-stats.woundsPath','system.attributes.wounds.value'],['pf1e-combat-stats.hpPath','system.attributes.hp.value'],['pf1e-combat-stats.debug',false]]);
+const src={id:'S',uuid:'Actor.S',name:'Fighter',type:'character',system:{attributes:{vigor:{value:40},wounds:{value:20},hp:{value:60}}},flags:{}};
+const target={id:'T',uuid:'Actor.T',name:'Enemy',type:'npc',system:{attributes:{vigor:{value:30},wounds:{value:15},hp:{value:45}}},flags:{'armor-soak-pool':{current:12}}};
+const actors=[src,target];actors.get=id=>actors.find(a=>a.id===id);actors.find=Array.prototype.find.bind(actors);
+const combat={id:'combat',started:true,name:'Test fight',round:1,turn:0,combatants:[{actor:src,actorId:src.id},{actor:target,actorId:target.id}]};
+globalThis.game={settings:{get:(module,key)=>store.get(`${module}.${key}`),set:async(module,key,value)=>{store.set(`${module}.${key}`,clone(value));}},user:{id:'gm',isGM:true},users:[{id:'gm',isGM:true,active:true}],combats:[combat],combat,actors,modules:new Map(),i18n:{localize:()=>''}};
+globalThis.canvas={tokens:{placeables:[]}};
+const {CombatTracker,resourceDelta}=await import('../scripts/tracker.js');
+assert.deepEqual(resourceDelta({hp:50,vigor:30,wounds:20,soak:12},{hp:20,vigor:12,wounds:20,soak:0}).soakDamage,12);
+const tracker=new CombatTracker();tracker.refreshSnapshots();await tracker._begin(combat);
+target.flags['armor-soak-pool'].current=0;tracker._update(target,{}, {},'gm');
+target.system.attributes.vigor.value=12;tracker._update(target,{}, {},'gm');
+await tracker._flush('combat|Actor.T');
+let rec=store.get('pf1e-combat-stats.currentCombatData');
+assert.equal(rec.events.length,1,'combined Soak/Vigor becomes one event');
+assert.equal(rec.events[0].soakDamage,12);assert.equal(rec.events[0].vigorDamage,18);
+assert.equal(rec.enemies[target.id].damageTaken,30);
+assert.equal(Object.keys(rec.characters).length,0,'no false source attribution');
+target.flags['armor-soak-pool'].current=12;tracker._update(target,{}, {},'gm');
+rec=store.get('pf1e-combat-stats.currentCombatData');assert.equal(rec.events.length,1,'soak refill not healing');
+tracker.queueSource({sourceActor:src,targetActor:target,itemName:'Shortsword'});
+target.system.attributes.vigor.value=5;tracker._update(target,{}, {},'gm');
+await tracker._flush('combat|Actor.T');
+rec=store.get('pf1e-combat-stats.currentCombatData');assert.equal(rec.events.length,2);
+assert.equal(rec.characters[src.id].damageDealt,7);assert.equal(rec.characters[src.id].abilities.Shortsword.hits,1);
+await tracker.acceptEvent(rec.events[1]);
+assert.equal(store.get('pf1e-combat-stats.currentCombatData').events.length,2,'eventId prevents repeat');
+console.log('OK: combined damage; refill ignored; explicit attacker; duplicate protection');

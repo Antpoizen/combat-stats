@@ -1,0 +1,129 @@
+{{!-- settings.hbs v2.0.0 --}}
+<form class="cs-settings-form">
+
+  {{!-- ── Colors ── --}}
+  <section class="cs-settings-section">
+    <h3><i class="fa-solid fa-palette"></i> {{localize "COMBATSTATS.Theme.Title"}}</h3>
+
+    <div class="cs-color-grid">
+      <div class="cs-color-item">
+        <input type="color" name="colorAccent" value="{{colorAccent}}">
+        <label>{{localize "COMBATSTATS.Theme.Accent"}}</label>
+      </div>
+      <div class="cs-color-item">
+        <input type="color" name="colorBg" value="{{colorBg}}">
+        <label>{{localize "COMBATSTATS.Theme.Bg"}}</label>
+      </div>
+      <div class="cs-color-item">
+        <input type="color" name="colorBgRow" value="{{colorBgRow}}">
+        <label>{{localize "COMBATSTATS.Theme.BgRow"}}</label>
+      </div>
+      <div class="cs-color-item">
+        <input type="color" name="colorDealt" value="{{colorDealt}}">
+        <label>{{localize "COMBATSTATS.Theme.Dealt"}}</label>
+      </div>
+      <div class="cs-color-item">
+        <input type="color" name="colorTaken" value="{{colorTaken}}">
+        <label>{{localize "COMBATSTATS.Theme.Taken"}}</label>
+      </div>
+      <div class="cs-color-item">
+        <input type="color" name="colorHealed" value="{{colorHealed}}">
+        <label>{{localize "COMBATSTATS.Theme.Healed"}}</label>
+      </div>
+      <div class="cs-color-item">
+        <input type="color" name="colorText" value="{{colorText}}">
+        <label>{{localize "COMBATSTATS.Theme.Text"}}</label>
+      </div>
+      <div class="cs-color-item">
+        <input type="color" name="bigHitColor" value="{{bigHitColor}}">
+        <label>{{localize "COMBATSTATS.Theme.BigHit"}}</label>
+      </div>
+      <div class="cs-color-item">
+        <input type="color" name="colorOverkill" value="{{colorOverkill}}">
+        <label>{{localize "COMBATSTATS.Theme.Overkill"}}</label>
+      </div>
+      <div class="cs-color-item">
+        <input type="color" name="colorExcessTaken" value="{{colorExcessTaken}}">
+        <label>{{localize "COMBATSTATS.Theme.ExcessTaken"}}</label>
+      </div>
+      <div class="cs-color-item">
+        <input type="color" name="colorOverhealing" value="{{colorOverhealing}}">
+        <label>{{localize "COMBATSTATS.Theme.Overhealing"}}</label>
+      </div>
+      <div class="cs-color-item">
+        <input type="color" name="colorMaxSingleHit" value="{{colorMaxSingleHit}}">
+        <label>{{localize "COMBATSTATS.Theme.MaxSingleHit"}}</label>
+      </div>
+      <div class="cs-color-item">
+        <input type="color" name="colorMaxSingleHeal" value="{{colorMaxSingleHeal}}">
+        <label>{{localize "COMBATSTATS.Theme.MaxSingleHeal"}}</label>
+      </div>
+      <div class="cs-color-item">
+        <input type="color" name="colorTimesDowned" value="{{colorTimesDowned}}">
+        <label>{{localize "COMBATSTATS.Theme.TimesDowned"}}</label>
+      </div>
+    </div>
+
+    <button type="button" id="cs-reset-colors" class="cs-btn-secondary" style="width:auto;">
+      <i class="fa-solid fa-rotate-left"></i> {{localize "COMBATSTATS.Theme.Reset"}}
+    </button>
+  </section>
+
+  {{!-- ── Big Hit Message ── --}}
+  <section class="cs-settings-section">
+    <h3><i class="fa-solid fa-meteor"></i> {{localize "COMBATSTATS.Theme.BigHitMsg"}}</h3>
+    <div class="cs-setting-row" style="flex-direction:column;align-items:stretch;gap:6px;">
+      <input type="text" id="cs-bighit-msg-input" name="bigHitMessage"
+        value="{{bigHitMessage}}"
+        placeholder="{{bigHitMessageDefault}}"
+        style="width:100%;background:#111827;color:#eee;border:1px solid rgba(212,175,55,0.4);
+               border-radius:4px;padding:6px 10px;font-family:inherit;font-size:0.85em;box-sizing:border-box;">
+      <div style="display:flex;gap:8px;">
+        <button type="button" class="cs-placeholder-btn" data-placeholder="name"
+          style="flex:1;font-size:0.78em;padding:4px 8px;border-radius:4px;border:1px solid rgba(212,175,55,0.4);
+                 background:#111827;color:#d4af37;cursor:pointer;font-family:inherit;">
+          + {{localize "COMBATSTATS.Theme.PlaceholderName"}}
+        </button>
+        <button type="button" class="cs-placeholder-btn" data-placeholder="value"
+          style="flex:1;font-size:0.78em;padding:4px 8px;border-radius:4px;border:1px solid rgba(206,65,65,0.4);
+                 background:#111827;color:#ce4141;cursor:pointer;font-family:inherit;">
+          + {{localize "COMBATSTATS.Theme.PlaceholderValue"}}
+        </button>
+        <button type="button" class="cs-placeholder-btn" data-placeholder="source"
+          style="flex:1;font-size:0.78em;padding:4px 8px;border-radius:4px;border:1px solid rgba(82,168,224,0.4);
+                 background:#111827;color:#52a8e0;cursor:pointer;font-family:inherit;">
+          + {{localize "COMBATSTATS.Theme.PlaceholderSource"}}
+        </button>
+        <button type="button" class="cs-placeholder-btn" data-placeholder="round"
+          style="flex:1;font-size:0.78em;padding:4px 8px;border-radius:4px;border:1px solid rgba(155,89,182,0.4);
+                 background:#111827;color:#9b59b6;cursor:pointer;font-family:inherit;">
+          + {{localize "COMBATSTATS.Theme.PlaceholderRound"}}
+        </button>
+      </div>
+      <div id="cs-bighit-preview"
+        style="font-size:0.82em;padding:6px 10px;border-radius:4px;background:rgba(255,106,0,0.06);
+               border:1px solid rgba(255,106,0,0.2);color:#ff6a00;min-height:1.8em;font-style:italic;">
+      </div>
+      <p style="font-size:0.75em;opacity:0.5;margin:0;line-height:1.6;">
+        {{localize "COMBATSTATS.Theme.BigHitMsgHint"}}
+      </p>
+    </div>
+    <button type="button" id="cs-reset-bighit-msg"
+      style="width:auto;margin-top:6px;font-size:0.75em;padding:3px 10px;border-radius:4px;
+             border:1px solid rgba(206,65,65,0.4);background:#111827;color:#ce4141;
+             cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:5px;">
+      <i class="fa-solid fa-rotate-left"></i> {{localize "COMBATSTATS.Theme.ResetMsg"}}
+    </button>
+  </section>
+
+  <div class="cs-settings-footer" style="display:flex;gap:8px;">
+    <button type="button" id="cs-open-data-mgmt" class="cs-btn-secondary" style="flex:1;">
+      <i class="fa-solid fa-database"></i> {{localize "COMBATSTATS.Theme.DataTitle"}}
+    </button>
+    <button type="submit" class="cs-btn-primary" style="flex:2;">
+      <i class="fa-solid fa-floppy-disk"></i> {{localize "COMBATSTATS.Theme.Save"}}
+    </button>
+  </div>
+
+
+</form>

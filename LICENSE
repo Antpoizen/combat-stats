@@ -1,0 +1,12 @@
+SPDX-License-Identifier: CC-BY-SA-4.0
+
+This derivative module incorporates and adapts portions of "Combat Stats" v4.0.0 by Smantella (original source: https://github.com/Smantella/combat-stats).
+
+The original package's module.json identifies its license as Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0). The modifications and derivative work are distributed under the same license, with attribution to the original author.
+
+The complete legal code and licensing terms are available at:
+https://creativecommons.org/licenses/by-sa/4.0/legalcode.en
+
+Modifications: PF1e/Foundry 13 damage tracking, Wounds/Vigor/Soak event model, local charts and XLSX exporter, PF1e settings, tests, and documentation.
+
+Note: The user-supplied Combat Stats ZIP did not contain the upstream LICENSE file; the upstream manifest declares CC-BY-SA-4.0. Fetch the exact upstream LICENSE when publishing a public release.

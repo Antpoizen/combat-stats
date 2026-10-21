@@ -1,0 +1,416 @@
+{{!-- charts.hbs v2.0.0 --}}
+<div class="cs-charts-wrap">
+
+  {{!-- Tab bar --}}
+  <div class="cs-tabs">
+    <button type="button" class="cs-tab-btn {{#if (eq tab 'totals')}}active{{/if}}" data-tab="totals">
+      <i class="fa-solid fa-table"></i> {{localize "COMBATSTATS.Tabs.Totals"}}
+    </button>
+    {{#if enemiesEnabled}}
+    <button type="button" class="cs-tab-btn {{#if (eq tab 'enemies')}}active{{/if}}" data-tab="enemies">
+      <i class="fa-solid fa-dragon"></i> {{localize "COMBATSTATS.Tabs.Enemies"}}
+    </button>
+    {{/if}}
+    <button type="button" class="cs-tab-btn {{#if (eq tab 'history')}}active{{/if}}" data-tab="history">
+      <i class="fa-solid fa-chart-column"></i> {{localize "COMBATSTATS.Tabs.Chart"}}
+    </button>
+    <button type="button" class="cs-tab-btn {{#if (eq tab 'abilities')}}active{{/if}}" data-tab="abilities">
+      <i class="fa-solid fa-hand-fist"></i> {{localize "COMBATSTATS.Tabs.Abilities"}}
+    </button>
+    {{#if selectedFight}}
+    <button type="button" class="cs-tab-btn {{#if (eq tab 'fight')}}active{{/if}}" data-tab="fight" data-fight-id="{{selectedFight.id}}">
+      <i class="fa-solid fa-swords"></i> {{selectedFight.name}}
+    </button>
+    <span id="cs-close-fight-tab" class="cs-tab-close-x" title="{{localize 'COMBATSTATS.Btn.Close'}}">✕</span>
+    {{/if}}
+
+    <div class="cs-tabs-right">
+      {{#if hasData}}
+      <button type="button" id="cs-export-excel" class="cs-export-btn" title="{{localize 'COMBATSTATS.Btn.Excel'}}">
+        <i class="fas fa-file-excel"></i> {{localize "COMBATSTATS.Btn.Excel"}}
+      </button>
+      {{/if}}
+      {{#if canUndoClear}}
+      <button type="button" id="cs-undo-clear-history" class="cs-undo-btn" title="{{localize 'COMBATSTATS.Btn.UndoClear'}}">
+        <i class="fa-solid fa-rotate-left"></i> {{localize "COMBATSTATS.Btn.UndoClear"}}
+      </button>
+      {{/if}}
+      {{#if isGM}}
+      <button type="button" id="cs-clear-history" class="cs-danger cs-clear-all-btn" title="{{localize 'COMBATSTATS.Btn.ClearAll'}}">
+        <i class="fa-solid fa-triangle-exclamation"></i> {{localize "COMBATSTATS.Btn.ClearAll"}}
+      </button>
+      {{/if}}
+    </div>
+  </div>
+
+  {{!-- ══ TAB: TOTALS ══ --}}
+  {{#if (eq tab 'totals')}}
+  <div class="cs-tab-content">
+    {{#if hasData}}
+    <div class="cs-fight-bar">
+      <label>{{localize "COMBATSTATS.Fight.Open"}}</label>
+      <select id="cs-fight-select">
+        <option value="">{{localize "COMBATSTATS.Fight.Select"}}</option>
+        {{#each history}}
+        <option value="{{id}}">{{name}}</option>
+        {{/each}}
+      </select>
+    </div>
+
+    <table class="cs-table">
+      <thead><tr>
+        <th>{{localize "COMBATSTATS.Table.Character"}}</th>
+        <th style="color:#ce4141;"><i class="fa-solid fa-burst"></i> {{localize "COMBATSTATS.Table.Dealt"}}</th>
+        {{#if show.overdamage}}<th style="color:#ff6a00;"><i class="fa-solid fa-skull-crossbones"></i> {{localize "COMBATSTATS.Chart.Over"}}</th>{{/if}}
+        <th style="color:#52a8e0;"><i class="fa-solid fa-shield-halved"></i> {{localize "COMBATSTATS.Table.Taken"}}</th>
+        {{#if show.excessDamageTaken}}<th style="color:#a855f7;"><i class="fa-solid fa-heart-crack"></i> {{localize "COMBATSTATS.Chart.Excess"}}</th>{{/if}}
+        <th style="color:#2ecc71;"><i class="fa-solid fa-heart"></i> {{localize "COMBATSTATS.Table.Healed"}}</th>
+        {{#if show.overhealing}}<th style="color:#1abc9c;"><i class="fa-solid fa-heart-circle-plus"></i> {{localize "COMBATSTATS.Chart.Overheal"}}</th>{{/if}}
+        <th style="color:var(--cs-accent);"><i class="fa-solid fa-skull"></i> {{localize "COMBATSTATS.Table.Kills"}}</th>
+        <th style="color:#ff4500;"><i class="fa-solid fa-khanda"></i> {{localize "COMBATSTATS.Chart.MaxHit"}}</th>
+        <th style="color:#1abc9c;"><i class="fa-solid fa-hand-holding-heart"></i> {{localize "COMBATSTATS.Chart.MaxHeal"}}</th>
+        <th style="color:#e8e8e8;"><i class="fa-solid fa-skull-crossbones"></i> {{localize "COMBATSTATS.Chart.Downed"}}</th>
+      </tr></thead>
+      <tbody>
+        {{#each totals}}
+        <tr>
+          <td class="cs-name" {{#if playerColor}}style="color:{{playerColor}};"{{/if}}>{{displayName}}</td>
+          <td class="cs-dealt">{{damageDealt}}</td>
+          {{#if ../show.overdamage}}<td class="cs-over">{{overdamage}}</td>{{/if}}
+          <td class="cs-taken">{{damageTaken}}</td>
+          {{#if ../show.excessDamageTaken}}<td class="cs-excess">{{excessDamageTaken}}</td>{{/if}}
+          <td class="cs-healed">{{healingDone}}</td>
+          {{#if ../show.overhealing}}<td class="cs-overheal">{{overhealing}}</td>{{/if}}
+          <td class="cs-kills">{{kills}}</td>
+          <td class="cs-maxhit">{{#if (gt maxSingleHit 0)}}{{maxSingleHit}}{{else}}—{{/if}}</td>
+          <td class="cs-maxheal">{{#if (gt maxSingleHeal 0)}}{{maxSingleHeal}}{{else}}—{{/if}}</td>
+          <td class="cs-downed">{{timesDowned}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+      <tfoot><tr class="cs-totals-row">
+        <td><strong>{{localize "COMBATSTATS.Table.Total"}}</strong></td>
+        <td><strong>{{grandTotal.damageDealt}}</strong></td>
+        {{#if show.overdamage}}<td class="cs-over"><strong>{{grandTotal.overdamage}}</strong></td>{{/if}}
+        <td><strong>{{grandTotal.damageTaken}}</strong></td>
+        {{#if show.excessDamageTaken}}<td class="cs-excess"><strong>{{grandTotal.excessDamageTaken}}</strong></td>{{/if}}
+        <td><strong>{{grandTotal.healingDone}}</strong></td>
+        {{#if show.overhealing}}<td class="cs-overheal"><strong>{{grandTotal.overhealing}}</strong></td>{{/if}}
+        <td><strong>{{grandTotal.kills}}</strong></td>
+        <td class="cs-maxhit">—</td>
+        <td class="cs-maxheal">—</td>
+        <td class="cs-downed"><strong>{{grandTotal.timesDowned}}</strong></td>
+      </tr></tfoot>
+    </table>
+    {{else}}
+    <p class="cs-no-data">
+      <i class="fa-solid fa-chart-column" style="font-size:2em;opacity:0.3;display:block;margin-bottom:8px;"></i>
+      {{localize "COMBATSTATS.Fight.NoFights"}}
+    </p>
+    {{/if}}
+  </div>
+  {{/if}}
+
+  {{!-- ══ TAB: ENEMIES ══ --}}
+  {{#if (eq tab 'enemies')}}
+  <div class="cs-tab-content">
+    {{#if hasEnemyData}}
+    <div class="cs-table-scroll">
+      <table class="cs-table cs-table-enemies">
+        <thead><tr>
+          <th>{{localize "COMBATSTATS.Table.Character"}}</th>
+          <th style="color:#ce4141;"><i class="fa-solid fa-burst"></i> {{localize "COMBATSTATS.Table.Dealt"}}</th>
+          {{#if show.overdamage}}<th style="color:#ff6a00;"><i class="fa-solid fa-skull-crossbones"></i> {{localize "COMBATSTATS.Chart.Over"}}</th>{{/if}}
+          <th style="color:#52a8e0;"><i class="fa-solid fa-shield-halved"></i> {{localize "COMBATSTATS.Table.Taken"}}</th>
+          {{#if show.excessDamageTaken}}<th style="color:#a855f7;"><i class="fa-solid fa-heart-crack"></i> {{localize "COMBATSTATS.Chart.Excess"}}</th>{{/if}}
+          <th style="color:#2ecc71;"><i class="fa-solid fa-heart"></i> {{localize "COMBATSTATS.Table.Healed"}}</th>
+          {{#if show.overhealing}}<th style="color:#1abc9c;"><i class="fa-solid fa-heart-circle-plus"></i> {{localize "COMBATSTATS.Chart.Overheal"}}</th>{{/if}}
+          <th style="color:var(--cs-accent);"><i class="fa-solid fa-skull"></i> {{localize "COMBATSTATS.Table.Kills"}}</th>
+          <th style="color:#ff4500;"><i class="fa-solid fa-khanda"></i> {{localize "COMBATSTATS.Chart.MaxHit"}}</th>
+          <th style="color:#1abc9c;"><i class="fa-solid fa-hand-holding-heart"></i> {{localize "COMBATSTATS.Chart.MaxHeal"}}</th>
+          {{#if isGM}}<th></th>{{/if}}
+        </tr></thead>
+        <tbody>
+          {{#each enemyTotals}}
+          <tr>
+            <td class="cs-name">{{name}}</td>
+            <td class="cs-dealt">{{damageDealt}}</td>
+            {{#if ../show.overdamage}}<td class="cs-over">{{overdamage}}</td>{{/if}}
+            <td class="cs-taken">{{damageTaken}}</td>
+            {{#if ../show.excessDamageTaken}}<td class="cs-excess">{{excessDamageTaken}}</td>{{/if}}
+            <td class="cs-healed">{{healingDone}}</td>
+            {{#if ../show.overhealing}}<td class="cs-overheal">{{overhealing}}</td>{{/if}}
+            <td class="cs-kills">{{kills}}</td>
+            <td class="cs-maxhit">{{#if (gt maxSingleHit 0)}}{{maxSingleHit}}{{else}}—{{/if}}</td>
+            <td class="cs-maxheal">{{#if (gt maxSingleHeal 0)}}{{maxSingleHeal}}{{else}}—{{/if}}</td>
+            {{#if ../isGM}}
+            <td>
+              <button type="button" class="cs-delete-enemy-row" data-enemy-id="{{id}}" data-enemy-name="{{name}}" title="{{localize 'COMBATSTATS.Enemies.Delete'}}">
+                <i class="fas fa-trash"></i>
+              </button>
+            </td>
+            {{/if}}
+          </tr>
+          {{/each}}
+        </tbody>
+        <tfoot><tr class="cs-totals-row">
+          <td><strong>{{localize "COMBATSTATS.Table.Total"}}</strong></td>
+          <td><strong>{{enemyGrandTotal.damageDealt}}</strong></td>
+          {{#if show.overdamage}}<td class="cs-over"><strong>{{enemyGrandTotal.overdamage}}</strong></td>{{/if}}
+          <td><strong>{{enemyGrandTotal.damageTaken}}</strong></td>
+          {{#if show.excessDamageTaken}}<td class="cs-excess"><strong>{{enemyGrandTotal.excessDamageTaken}}</strong></td>{{/if}}
+          <td><strong>{{enemyGrandTotal.healingDone}}</strong></td>
+          {{#if show.overhealing}}<td class="cs-overheal"><strong>{{enemyGrandTotal.overhealing}}</strong></td>{{/if}}
+          <td><strong>{{enemyGrandTotal.kills}}</strong></td>
+          <td class="cs-maxhit">—</td>
+          <td class="cs-maxheal">—</td>
+          {{#if isGM}}<td></td>{{/if}}
+        </tr></tfoot>
+      </table>
+    </div>
+    {{else}}
+    <p class="cs-no-data">{{localize "COMBATSTATS.Fight.NoFights"}}</p>
+    {{/if}}
+  </div>
+  {{/if}}
+
+  {{!-- ══ TAB: CHART ══ --}}
+  {{#if (eq tab 'history')}}
+  <div class="cs-tab-content cs-tab-chart">
+    <div class="cs-chart-toolbar">
+      <div class="cs-btn-group">
+        <button type="button" class="cs-mode-btn {{#if (eq metric 'dealt')}}active{{/if}}" data-mode="dealt">
+          <i class="fa-solid fa-burst" style="color:#ce4141;"></i> {{localize "COMBATSTATS.Chart.Dealt"}}
+        </button>
+        {{#if show.overdamage}}
+        <button type="button" class="cs-mode-btn {{#if (eq metric 'over')}}active{{/if}}" data-mode="over">
+          <i class="fa-solid fa-skull-crossbones" style="color:#ff6a00;"></i> {{localize "COMBATSTATS.Chart.Over"}}
+        </button>
+        {{/if}}
+        <button type="button" class="cs-mode-btn {{#if (eq metric 'taken')}}active{{/if}}" data-mode="taken">
+          <i class="fa-solid fa-shield-halved" style="color:#e67e22;"></i> {{localize "COMBATSTATS.Chart.Taken"}}
+        </button>
+        {{#if show.excessDamageTaken}}
+        <button type="button" class="cs-mode-btn {{#if (eq metric 'excess')}}active{{/if}}" data-mode="excess">
+          <i class="fa-solid fa-heart-crack" style="color:#c0392b;"></i> {{localize "COMBATSTATS.Chart.Excess"}}
+        </button>
+        {{/if}}
+        <button type="button" class="cs-mode-btn {{#if (eq metric 'healed')}}active{{/if}}" data-mode="healed">
+          <i class="fa-solid fa-heart" style="color:#2ecc71;"></i> {{localize "COMBATSTATS.Chart.Healed"}}
+        </button>
+        {{#if show.overhealing}}
+        <button type="button" class="cs-mode-btn {{#if (eq metric 'overheal')}}active{{/if}}" data-mode="overheal">
+          <i class="fa-solid fa-heart-circle-plus" style="color:#27ae60;"></i> {{localize "COMBATSTATS.Chart.Overheal"}}
+        </button>
+        {{/if}}
+        <button type="button" class="cs-mode-btn {{#if (eq metric 'kills')}}active{{/if}}" data-mode="kills">
+          <i class="fa-solid fa-skull" style="color:#d4af37;"></i> {{localize "COMBATSTATS.Chart.Kills"}}
+        </button>
+        <button type="button" class="cs-mode-btn {{#if (eq metric 'maxhit')}}active{{/if}}" data-mode="maxhit">
+          <i class="fa-solid fa-khanda" style="color:#ff6a00;"></i> {{localize "COMBATSTATS.Chart.MaxHit"}}
+        </button>
+        <button type="button" class="cs-mode-btn {{#if (eq metric 'maxheal')}}active{{/if}}" data-mode="maxheal">
+          <i class="fa-solid fa-hand-holding-heart" style="color:#1abc9c;"></i> {{localize "COMBATSTATS.Chart.MaxHeal"}}
+        </button>
+        <button type="button" class="cs-mode-btn {{#if (eq metric 'downed')}}active{{/if}}" data-mode="downed">
+          <i class="fa-solid fa-skull-crossbones" style="color:#e8e8e8;"></i> {{localize "COMBATSTATS.Chart.Downed"}}
+        </button>
+      </div>
+      <div class="cs-btn-group">
+        <button type="button" class="cs-type-btn {{#if (eq chartType 'bar')}}active{{/if}}" data-type="bar">
+          <i class="fa-solid fa-chart-column"></i> Bar
+        </button>
+        <button type="button" class="cs-type-btn {{#if (eq chartType 'doughnut')}}active{{/if}}" data-type="doughnut">
+          <i class="fa-solid fa-chart-pie"></i> Doughnut
+        </button>
+        <button type="button" class="cs-type-btn {{#if (eq chartType 'trend')}}active{{/if}}" data-type="trend">
+          <i class="fa-solid fa-chart-line"></i> Trend
+        </button>
+      </div>
+    </div>
+    {{#if hasData}}
+    <div class="cs-chart-container">
+      <canvas id="cs-chart-canvas"></canvas>
+    </div>
+    {{else}}
+    <p class="cs-no-data">{{localize "COMBATSTATS.Fight.NoFights"}}</p>
+    {{/if}}
+  </div>
+  {{/if}}
+
+  {{!-- ══ TAB: ABILITIES (Damage Meter) ══ --}}
+  {{#if (eq tab 'abilities')}}
+  <div class="cs-tab-content">
+    {{#if hasData}}
+    <div class="cs-fight-bar" style="gap:10px;flex-wrap:wrap;align-items:center;">
+      <label>{{localize "COMBATSTATS.Abilities.CharacterA"}}</label>
+      {{#each abilityCharacters}}
+      <button type="button" class="cs-char-chip {{#if this.selected}}active{{/if}}" data-actor-id="{{this.id}}">{{this.name}}</button>
+      {{/each}}
+    </div>
+
+    <div class="cs-dmgmeter-wrap">
+    {{#each abilityTables}}
+    <div class="cs-ability-block">
+      <h3 class="cs-ability-name" style="color:{{this.color}};">{{this.displayName}}</h3>
+      <div class="cs-dmgmeter">
+        {{#each this.rows}}
+        <div class="cs-dmg-row">
+          <div class="cs-dmg-bar" style="width:{{this.pct}}%;background:{{this.color}};"></div>
+          <div class="cs-dmg-label">
+            <span class="cs-dmg-name">{{this.ability}}</span>
+            <span class="cs-dmg-sub">{{this.hits}} {{localize "COMBATSTATS.Abilities.Hits"}} · {{localize "COMBATSTATS.Abilities.Avg"}} {{this.avg}} · {{localize "COMBATSTATS.Abilities.Max"}} {{this.max}}</span>
+            <span class="cs-dmg-total">{{this.total}} <small>({{this.sharePct}}%)</small></span>
+          </div>
+        </div>
+        {{/each}}
+      </div>
+    </div>
+    {{/each}}
+    </div>{{!-- .cs-dmgmeter-wrap --}}
+
+    {{#unless abilityTables}}
+    <p class="cs-no-data">{{localize "COMBATSTATS.Abilities.PickCharacter"}}</p>
+    {{/unless}}
+    {{else}}
+    <p class="cs-no-data">{{localize "COMBATSTATS.Fight.NoFights"}}</p>
+    {{/if}}
+  </div>
+  {{/if}}
+
+  {{!-- ══ TAB: SINGLE FIGHT ══ --}}
+  {{#if (eq tab 'fight')}}
+  {{#if selectedFight}}
+  <div class="cs-tab-content">
+
+    <div class="cs-fight-header">
+      <i class="fa-solid fa-swords"></i>
+      <span class="cs-fight-title">{{selectedFight.name}}</span>
+      <span class="cs-fight-date">{{date}}</span>
+      {{#if isGM}}
+      <button type="button" id="cs-delete-fight" class="cs-danger cs-delete-fight-btn" title="{{localize 'COMBATSTATS.Fight.Delete'}}">
+        <i class="fas fa-trash"></i> {{localize "COMBATSTATS.Btn.Delete"}}
+      </button>
+      {{/if}}
+    </div>
+
+    {{#if fightChars}}
+    <table class="cs-table">
+      <thead><tr>
+        <th>{{localize "COMBATSTATS.Table.Character"}}</th>
+        <th style="color:#ce4141;"><i class="fa-solid fa-burst"></i> {{localize "COMBATSTATS.Table.Dealt"}}</th>
+        {{#if show.overdamage}}<th style="color:#ff6a00;"><i class="fa-solid fa-skull-crossbones"></i> {{localize "COMBATSTATS.Chart.Over"}}</th>{{/if}}
+        <th style="color:#52a8e0;"><i class="fa-solid fa-shield-halved"></i> {{localize "COMBATSTATS.Table.Taken"}}</th>
+        {{#if show.excessDamageTaken}}<th style="color:#a855f7;"><i class="fa-solid fa-heart-crack"></i> {{localize "COMBATSTATS.Chart.Excess"}}</th>{{/if}}
+        <th style="color:#2ecc71;"><i class="fa-solid fa-heart"></i> {{localize "COMBATSTATS.Table.Healed"}}</th>
+        {{#if show.overhealing}}<th style="color:#1abc9c;"><i class="fa-solid fa-heart-circle-plus"></i> {{localize "COMBATSTATS.Chart.Overheal"}}</th>{{/if}}
+        <th style="color:var(--cs-accent);"><i class="fa-solid fa-skull"></i> {{localize "COMBATSTATS.Table.Kills"}}</th>
+        <th style="color:#ff4500;"><i class="fa-solid fa-khanda"></i> {{localize "COMBATSTATS.Chart.MaxHit"}}</th>
+        <th style="color:#1abc9c;"><i class="fa-solid fa-hand-holding-heart"></i> {{localize "COMBATSTATS.Chart.MaxHeal"}}</th>
+        <th style="color:#e8e8e8;"><i class="fa-solid fa-skull-crossbones"></i> {{localize "COMBATSTATS.Chart.Downed"}}</th>
+      </tr></thead>
+      <tbody>
+        {{#each fightChars}}
+        <tr>
+          <td class="cs-name" {{#if playerColor}}style="color:{{playerColor}};"{{/if}}>{{displayName}}</td>
+          <td class="cs-dealt">{{damageDealt}}</td>
+          {{#if ../show.overdamage}}<td class="cs-over">{{overdamage}}</td>{{/if}}
+          <td class="cs-taken">{{damageTaken}}</td>
+          {{#if ../show.excessDamageTaken}}<td class="cs-excess">{{excessDamageTaken}}</td>{{/if}}
+          <td class="cs-healed">{{healingDone}}</td>
+          {{#if ../show.overhealing}}<td class="cs-overheal">{{overhealing}}</td>{{/if}}
+          <td class="cs-kills">{{kills}}</td>
+          <td class="cs-maxhit">{{#if (gt maxSingleHit 0)}}{{maxSingleHit}}{{else}}—{{/if}}</td>
+          <td class="cs-maxheal">{{#if (gt maxSingleHeal 0)}}{{maxSingleHeal}}{{else}}—{{/if}}</td>
+          <td class="cs-downed">{{timesDowned}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+      <tfoot><tr class="cs-totals-row">
+        <td><strong>{{localize "COMBATSTATS.Table.Total"}}</strong></td>
+        <td><strong>{{fightTotal.damageDealt}}</strong></td>
+        {{#if show.overdamage}}<td class="cs-over"><strong>{{fightTotal.overdamage}}</strong></td>{{/if}}
+        <td><strong>{{fightTotal.damageTaken}}</strong></td>
+        {{#if show.excessDamageTaken}}<td class="cs-excess"><strong>{{fightTotal.excessDamageTaken}}</strong></td>{{/if}}
+        <td><strong>{{fightTotal.healingDone}}</strong></td>
+        {{#if show.overhealing}}<td class="cs-overheal"><strong>{{fightTotal.overhealing}}</strong></td>{{/if}}
+        <td><strong>{{fightTotal.kills}}</strong></td>
+        <td class="cs-maxhit">—</td>
+        <td class="cs-maxheal">—</td>
+        <td class="cs-downed"><strong>{{fightTotal.timesDowned}}</strong></td>
+      </tr></tfoot>
+    </table>
+
+    {{#if (gt fightDefeated.length 0)}}
+    <div class="cs-defeated-list">
+      <div class="cs-defeated-header">
+        <i class="fa-solid fa-skull"></i> {{localize "COMBATSTATS.Fight.Defeated"}} ({{fightDefeated.length}})
+      </div>
+      <div class="cs-defeated-names">
+        {{#each fightDefeated}}
+        <span class="cs-defeated-tag">
+          {{#if killerName}}
+            <span class="cs-killer">{{killerName}}</span>
+            <i class="fa-solid fa-skull cs-kill-icon"></i>
+          {{/if}}
+          <span class="cs-victim">{{name}}</span>
+        </span>
+        {{/each}}
+      </div>
+    </div>
+    {{/if}}
+
+    {{#if hasFightEnemyData}}
+    <h3 class="cs-section-title"><i class="fa-solid fa-dragon"></i> {{localize "COMBATSTATS.Fight.Enemies"}}</h3>
+    <table class="cs-table cs-table-enemies">
+      <thead><tr>
+        <th>{{localize "COMBATSTATS.Table.Character"}}</th>
+        <th style="color:#ce4141;"><i class="fa-solid fa-burst"></i> {{localize "COMBATSTATS.Table.Dealt"}}</th>
+        {{#if show.overdamage}}<th style="color:#ff6a00;"><i class="fa-solid fa-skull-crossbones"></i> {{localize "COMBATSTATS.Chart.Over"}}</th>{{/if}}
+        <th style="color:#52a8e0;"><i class="fa-solid fa-shield-halved"></i> {{localize "COMBATSTATS.Table.Taken"}}</th>
+        {{#if show.excessDamageTaken}}<th style="color:#a855f7;"><i class="fa-solid fa-heart-crack"></i> {{localize "COMBATSTATS.Chart.Excess"}}</th>{{/if}}
+        <th style="color:#2ecc71;"><i class="fa-solid fa-heart"></i> {{localize "COMBATSTATS.Table.Healed"}}</th>
+        {{#if show.overhealing}}<th style="color:#1abc9c;"><i class="fa-solid fa-heart-circle-plus"></i> {{localize "COMBATSTATS.Chart.Overheal"}}</th>{{/if}}
+        <th style="color:var(--cs-accent);"><i class="fa-solid fa-skull"></i> {{localize "COMBATSTATS.Table.Kills"}}</th>
+        <th style="color:#ff4500;"><i class="fa-solid fa-khanda"></i> {{localize "COMBATSTATS.Chart.MaxHit"}}</th>
+        <th style="color:#1abc9c;"><i class="fa-solid fa-hand-holding-heart"></i> {{localize "COMBATSTATS.Chart.MaxHeal"}}</th>
+      </tr></thead>
+      <tbody>
+        {{#each fightEnemies}}
+        <tr>
+          <td class="cs-name">{{name}}</td>
+          <td class="cs-dealt">{{damageDealt}}</td>
+          {{#if ../show.overdamage}}<td class="cs-over">{{overdamage}}</td>{{/if}}
+          <td class="cs-taken">{{damageTaken}}</td>
+          {{#if ../show.excessDamageTaken}}<td class="cs-excess">{{excessDamageTaken}}</td>{{/if}}
+          <td class="cs-healed">{{healingDone}}</td>
+          {{#if ../show.overhealing}}<td class="cs-overheal">{{overhealing}}</td>{{/if}}
+          <td class="cs-kills">{{kills}}</td>
+          <td class="cs-maxhit">{{#if (gt maxSingleHit 0)}}{{maxSingleHit}}{{else}}—{{/if}}</td>
+          <td class="cs-maxheal">{{#if (gt maxSingleHeal 0)}}{{maxSingleHeal}}{{else}}—{{/if}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+      <tfoot><tr class="cs-totals-row">
+        <td><strong>{{localize "COMBATSTATS.Table.Total"}}</strong></td>
+        <td><strong>{{fightEnemyTotal.damageDealt}}</strong></td>
+        {{#if show.overdamage}}<td class="cs-over"><strong>{{fightEnemyTotal.overdamage}}</strong></td>{{/if}}
+        <td><strong>{{fightEnemyTotal.damageTaken}}</strong></td>
+        {{#if show.excessDamageTaken}}<td class="cs-excess"><strong>{{fightEnemyTotal.excessDamageTaken}}</strong></td>{{/if}}
+        <td><strong>{{fightEnemyTotal.healingDone}}</strong></td>
+        {{#if show.overhealing}}<td class="cs-overheal"><strong>{{fightEnemyTotal.overhealing}}</strong></td>{{/if}}
+        <td><strong>{{fightEnemyTotal.kills}}</strong></td>
+        <td class="cs-maxhit">—</td>
+        <td class="cs-maxheal">—</td>
+      </tr></tfoot>
+    </table>
+    {{/if}}
+
+    {{else}}
+    <p class="cs-no-data">{{localize "COMBATSTATS.Fight.NoData"}}</p>
+    {{/if}}
+  </div>
+  {{/if}}
+  {{/if}}
+
+</div>

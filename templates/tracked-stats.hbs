@@ -1,0 +1,93 @@
+<form class="cs-tracked-stats-form" autocomplete="off">
+  <div class="cs-toggle-list" style="display:flex;flex-direction:column;gap:6px;">
+
+    <label class="cs-toggle-row" style="display:flex;align-items:center;justify-content:space-between;padding:5px 8px;background:var(--cs-bg-row,#252530);border-radius:4px;">
+      <span><i class="fa-solid fa-skull" style="color:#d4af37;margin-right:6px;"></i> {{localize "COMBATSTATS.TrackedStats.Kills"}}</span>
+      <input type="checkbox" name="trackKills" {{#if trackKills}}checked{{/if}}>
+    </label>
+
+    <label class="cs-toggle-row" style="display:flex;align-items:center;justify-content:space-between;padding:5px 8px;background:var(--cs-bg-row,#252530);border-radius:4px;">
+      <span><i class="fa-solid fa-burst" style="color:#ce4141;margin-right:6px;"></i> {{localize "COMBATSTATS.TrackedStats.DamageDealt"}}</span>
+      <input type="checkbox" name="trackDamageDealt" {{#if trackDamageDealt}}checked{{/if}}>
+    </label>
+
+    <label class="cs-toggle-row" style="display:flex;align-items:center;justify-content:space-between;padding:5px 8px;background:var(--cs-bg-row,#252530);border-radius:4px;margin-left:16px;{{#unless isMidi}}opacity:0.45;{{/unless}}">
+      <span style="opacity:0.8;font-size:0.9em;display:flex;align-items:center;gap:6px;">
+        <i class="fa-solid fa-skull-crossbones" style="color:#ff6a00;"></i>
+        {{localize "COMBATSTATS.TrackedStats.Overdamage"}}
+        {{#unless isMidi}}<span style="font-size:0.75em;background:#ff6a0022;border:1px solid #ff6a0055;color:#ff6a00;border-radius:3px;padding:1px 5px;">Not available without verified source data</span>{{/unless}}
+      </span>
+      <input type="checkbox" name="trackOverdamage" {{#if trackOverdamage}}checked{{/if}} {{#unless isMidi}}disabled{{/unless}}>
+    </label>
+
+    <label class="cs-toggle-row" style="display:flex;align-items:center;justify-content:space-between;padding:5px 8px;background:var(--cs-bg-row,#252530);border-radius:4px;">
+      <span><i class="fa-solid fa-shield-halved" style="color:#52a8e0;margin-right:6px;"></i> {{localize "COMBATSTATS.TrackedStats.DamageTaken"}}</span>
+      <input type="checkbox" name="trackDamageTaken" {{#if trackDamageTaken}}checked{{/if}}>
+    </label>
+
+    <label class="cs-toggle-row" style="display:flex;align-items:center;justify-content:space-between;padding:5px 8px;background:var(--cs-bg-row,#252530);border-radius:4px;margin-left:16px;{{#unless isMidi}}opacity:0.45;{{/unless}}">
+      <span style="opacity:0.8;font-size:0.9em;display:flex;align-items:center;gap:6px;">
+        <i class="fa-solid fa-heart-crack" style="color:#a855f7;"></i>
+        {{localize "COMBATSTATS.TrackedStats.ExcessTaken"}}
+        {{#unless isMidi}}<span style="font-size:0.75em;background:#ff6a0022;border:1px solid #ff6a0055;color:#ff6a00;border-radius:3px;padding:1px 5px;">Not available without verified source data</span>{{/unless}}
+      </span>
+      <input type="checkbox" name="trackExcessDamageTaken" {{#if trackExcessDamageTaken}}checked{{/if}} {{#unless isMidi}}disabled{{/unless}}>
+    </label>
+
+    <label class="cs-toggle-row" style="display:flex;align-items:center;justify-content:space-between;padding:5px 8px;background:var(--cs-bg-row,#252530);border-radius:4px;">
+      <span><i class="fa-solid fa-heart" style="color:#2ecc71;margin-right:6px;"></i> {{localize "COMBATSTATS.TrackedStats.HealingDone"}}</span>
+      <input type="checkbox" name="trackHealingDone" {{#if trackHealingDone}}checked{{/if}}>
+    </label>
+
+    <label class="cs-toggle-row" style="display:flex;align-items:center;justify-content:space-between;padding:5px 8px;background:var(--cs-bg-row,#252530);border-radius:4px;margin-left:16px;{{#unless isMidi}}opacity:0.45;{{/unless}}">
+      <span style="opacity:0.8;font-size:0.9em;display:flex;align-items:center;gap:6px;">
+        <i class="fa-solid fa-heart-circle-plus" style="color:#1abc9c;"></i>
+        {{localize "COMBATSTATS.TrackedStats.Overhealing"}}
+        {{#unless isMidi}}<span style="font-size:0.75em;background:#ff6a0022;border:1px solid #ff6a0055;color:#ff6a00;border-radius:3px;padding:1px 5px;">Not available without verified source data</span>{{/unless}}
+      </span>
+      <input type="checkbox" name="trackOverhealing" {{#if trackOverhealing}}checked{{/if}} {{#unless isMidi}}disabled{{/unless}}>
+    </label>
+
+    <label class="cs-toggle-row" style="display:flex;align-items:center;justify-content:space-between;padding:5px 8px;background:var(--cs-bg-row,#252530);border-radius:4px;">
+      <span><i class="fa-solid fa-hand-holding-heart" style="color:#1abc9c;margin-right:6px;"></i> {{localize "COMBATSTATS.TrackedStats.MaxSingleHeal"}}</span>
+      <input type="checkbox" name="trackMaxSingleHeal" {{#if trackMaxSingleHeal}}checked{{/if}}>
+    </label>
+
+    <label class="cs-toggle-row" style="display:flex;align-items:center;justify-content:space-between;padding:5px 8px;background:var(--cs-bg-row,#252530);border-radius:4px;">
+      <span><i class="fa-solid fa-skull-crossbones" style="color:#c0392b;margin-right:6px;"></i> {{localize "COMBATSTATS.TrackedStats.TimesDowned"}}</span>
+      <input type="checkbox" name="trackTimesDowned" {{#if trackTimesDowned}}checked{{/if}}>
+    </label>
+
+    {{!-- ── Chat Card Columns ── --}}
+    <div style="margin-top:10px;padding:6px 8px 2px;font-size:0.75em;text-transform:uppercase;letter-spacing:0.06em;color:var(--cs-accent,#d4af37);opacity:0.8;">
+      <i class="fa-solid fa-message" style="margin-right:5px;"></i> {{localize "COMBATSTATS.TrackedStats.ChatColumns"}}
+    </div>
+
+    <label class="cs-toggle-row" style="display:flex;align-items:center;justify-content:space-between;padding:5px 8px;background:var(--cs-bg-row,#252530);border-radius:4px;">
+      <span style="font-size:0.9em;"><i class="fa-solid fa-skull" style="color:#d4af37;margin-right:6px;"></i> {{localize "COMBATSTATS.TrackedStats.Kills"}}</span>
+      <input type="checkbox" name="chatShowKills" {{#if chatShowKills}}checked{{/if}}>
+    </label>
+
+    <label class="cs-toggle-row" style="display:flex;align-items:center;justify-content:space-between;padding:5px 8px;background:var(--cs-bg-row,#252530);border-radius:4px;">
+      <span style="font-size:0.9em;"><i class="fa-solid fa-burst" style="color:#ce4141;margin-right:6px;"></i> {{localize "COMBATSTATS.TrackedStats.DamageDealt"}}</span>
+      <input type="checkbox" name="chatShowDamageDealt" {{#if chatShowDamageDealt}}checked{{/if}}>
+    </label>
+
+    <label class="cs-toggle-row" style="display:flex;align-items:center;justify-content:space-between;padding:5px 8px;background:var(--cs-bg-row,#252530);border-radius:4px;">
+      <span style="font-size:0.9em;"><i class="fa-solid fa-shield-halved" style="color:#52a8e0;margin-right:6px;"></i> {{localize "COMBATSTATS.TrackedStats.DamageTaken"}}</span>
+      <input type="checkbox" name="chatShowDamageTaken" {{#if chatShowDamageTaken}}checked{{/if}}>
+    </label>
+
+    <label class="cs-toggle-row" style="display:flex;align-items:center;justify-content:space-between;padding:5px 8px;background:var(--cs-bg-row,#252530);border-radius:4px;">
+      <span style="font-size:0.9em;"><i class="fa-solid fa-heart" style="color:#2ecc71;margin-right:6px;"></i> {{localize "COMBATSTATS.TrackedStats.HealingDone"}}</span>
+      <input type="checkbox" name="chatShowHealingDone" {{#if chatShowHealingDone}}checked{{/if}}>
+    </label>
+
+  </div>
+
+  <div style="margin-top:14px;text-align:right;">
+    <button type="submit" style="background:var(--cs-accent,#d4af37);color:#1a1a24;border:none;border-radius:4px;padding:5px 16px;font-weight:700;cursor:pointer;">
+      <i class="fa-solid fa-floppy-disk"></i> {{localize "COMBATSTATS.TrackedStats.Save"}}
+    </button>
+  </div>
+</form>

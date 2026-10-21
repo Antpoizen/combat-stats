@@ -1,0 +1,19 @@
+{{!-- data-management.hbs v2.0.0 --}}
+<div class="cs-settings-form" style="padding:12px;">
+  <div style="display:flex;flex-direction:column;gap:8px;">
+    <button type="button" id="cs-export-excel-settings" class="cs-btn-secondary">
+      <i class="fa-solid fa-file-excel"></i> {{localize "COMBATSTATS.Theme.ExportExcel"}}
+    </button>
+    <button type="button" id="cs-export-json-settings" class="cs-btn-secondary">
+      <i class="fa-solid fa-file-export"></i> {{localize "COMBATSTATS.Theme.ExportJson"}}
+    </button>
+    <button type="button" id="cs-import-json-settings" class="cs-btn-secondary">
+      <i class="fa-solid fa-file-import"></i> {{localize "COMBATSTATS.Theme.ImportJson"}}
+    </button>
+    <input type="file" id="cs-import-json-input" accept=".json" style="display:none;">
+    <hr style="border-color:rgba(255,255,255,0.1);margin:4px 0;">
+    <button type="button" id="cs-clear-history-settings" class="cs-btn-danger">
+      <i class="fa-solid fa-trash"></i> {{localize "COMBATSTATS.Theme.ClearHistory"}}
+    </button>
+  </div>
+</div>

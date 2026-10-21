@@ -1,0 +1,689 @@
+/* ════════════════════════════════════════
+   ODIO I CSS
+========================================================================== */
+
+/* ── Root defaults (sovrascritta da applyTheme) ──────────────────────── */
+:root {
+  --cs-accent:  #d4af37;
+  --cs-bg:      #1a1a24;
+  --cs-bg-row:  #252530;
+  --cs-dealt:   #ce4141;
+  --cs-taken:   #52a8e0;
+  --cs-healed:  #2ecc71;
+  --cs-text:    #eeeeee;
+}
+
+/* ── Window shell ─────────────────────────────────────────────────────── */
+.combat-stats .window-content {
+  padding: 0;
+  background: var(--cs-bg);
+  color: var(--cs-text);
+  font-family: "Signika", sans-serif;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Tab bar ──────────────────────────────────────────────────────────── */
+.cs-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: color-mix(in srgb, var(--cs-bg) 60%, black);
+  border-bottom: 2px solid var(--cs-accent);
+  padding: 6px 8px 0;
+  flex-shrink: 0;
+}
+
+.cs-tab-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: none;
+  color: color-mix(in srgb, var(--cs-text) 60%, transparent);
+  padding: 5px 14px;
+  border-radius: 4px 4px 0 0;
+  cursor: pointer;
+  font-size: 0.82em;
+  font-family: inherit;
+  transition: background 0.15s, color 0.15s;
+}
+.cs-tab-btn:hover {
+  color: var(--cs-text);
+  background: color-mix(in srgb, var(--cs-accent) 15%, transparent);
+}
+.cs-tab-btn.active {
+  background: var(--cs-bg);
+  border-color: var(--cs-accent);
+  color: var(--cs-accent);
+  font-weight: 600;
+}
+
+.cs-tabs-right {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding-bottom: 4px;
+}
+
+/* ── Tab content area ─────────────────────────────────────────────────── */
+.cs-tab-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+.cs-tab-chart {
+  gap: 8px;
+}
+
+/* ── Fight selector bar ───────────────────────────────────────────────── */
+.cs-fight-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.cs-fight-bar select,
+#cs-fight-select {
+  max-width: 180px; /* Evita l'allungamento esagerato */
+  width: auto;
+  background: color-mix(in srgb, var(--cs-bg) 80%, black);
+  color: var(--cs-text);
+  border: 1px solid var(--cs-accent);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 0.82em;
+  font-family: inherit;
+}
+
+/* ── Table ────────────────────────────────────────────────────────────── */
+.cs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88em;
+}
+.cs-table thead tr {
+  background: color-mix(in srgb, var(--cs-accent) 15%, var(--cs-bg));
+}
+.cs-table th {
+  padding: 7px 10px;
+  text-align: left;
+  color: var(--cs-accent);
+  font-weight: 600;
+  border-bottom: 1px solid var(--cs-accent);
+  white-space: nowrap;
+}
+.cs-table th:not(:first-child),
+.cs-table td:not(:first-child) { text-align: center; }
+
+.cs-table tbody tr { border-bottom: 1px solid color-mix(in srgb, var(--cs-accent) 10%, transparent); }
+.cs-table tbody tr:nth-child(even) { background: var(--cs-bg-row); }
+.cs-table tbody tr:hover { background: color-mix(in srgb, var(--cs-accent) 8%, var(--cs-bg)); }
+.cs-table td { padding: 7px 10px; color: var(--cs-text); }
+.cs-table td.cs-name { font-weight: 700; color: var(--cs-player-color, var(--cs-text)); }
+.cs-table td.cs-sub  { font-size: 0.78em; opacity: 0.75; font-weight: 500; }
+.cs-table td.cs-dealt  { color: #ce4141;  font-weight: 700; }
+.cs-table td.cs-taken  { color: #52a8e0;  font-weight: 600; }
+.cs-table td.cs-healed { color: #2ecc71;  font-weight: 600; }
+
+.cs-table tfoot .cs-totals-row {
+  background: color-mix(in srgb, var(--cs-accent) 12%, var(--cs-bg));
+  border-top: 2px solid var(--cs-accent);
+}
+.cs-table tfoot td {
+  padding: 8px 10px;
+  color: #eeeeee;
+  background: inherit;
+}
+.cs-table tfoot td:first-child {
+  color: var(--cs-accent);
+}
+.cs-table tfoot td.cs-over,
+.cs-table tfoot td.cs-excess,
+.cs-table tfoot td.cs-overheal,
+.cs-table tfoot td.cs-maxhit,
+.cs-table tfoot td.cs-dealt,
+.cs-table tfoot td.cs-taken,
+.cs-table tfoot td.cs-healed,
+.cs-table tfoot td.cs-kills {
+  color: #eeeeee;
+}
+
+/* ── Chart toolbar ────────────────────────────────────────────────────── */
+.cs-chart-toolbar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: nowrap; /* Evita di mandare a capo i bottoni se c'è spazio */
+  align-items: center;
+  flex-shrink: 0;
+}
+.cs-chart-toolbar select {
+  max-width: 180px; /* Limita la larghezza dei select dei grafici */
+  width: auto;
+  background: color-mix(in srgb, var(--cs-bg) 80%, black);
+  color: var(--cs-text);
+  border: 1px solid var(--cs-accent);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 0.82em;
+  font-family: inherit;
+}
+.cs-btn-group {
+  display: flex;
+  border: 1px solid color-mix(in srgb, var(--cs-accent) 40%, transparent);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.cs-btn-group button {
+  background: color-mix(in srgb, var(--cs-bg) 80%, black);
+  color: color-mix(in srgb, var(--cs-text) 70%, transparent);
+  border: none;
+  padding: 4px 11px;
+  cursor: pointer;
+  font-size: 0.8em;
+  font-family: inherit;
+  transition: background 0.15s;
+}
+.cs-btn-group button:hover { background: color-mix(in srgb, var(--cs-accent) 15%, var(--cs-bg)); color: var(--cs-text); }
+.cs-btn-group button.active { background: color-mix(in srgb, var(--cs-accent) 25%, var(--cs-bg)); color: var(--cs-accent); font-weight: 700; }
+
+/* ── Chart container ──────────────────────────────────────────────────── */
+.cs-chart-container {
+  flex: 1;
+  position: relative;
+  min-height: 0;
+}
+#cs-chart-canvas { width: 100% !important; height: 100% !important; }
+
+/* ── Fight header (inline detail) ─────────────────────────────────────── */
+.cs-fight-header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--cs-accent);
+}
+.cs-fight-title { font-size: 1.1em; font-weight: 700; color: var(--cs-accent); }
+.cs-fight-date  { font-size: 0.78em; opacity: 0.6; }
+
+/* ── Summary popup ────────────────────────────────────────────────────── */
+.cs-summary-wrap { padding: 12px 16px; }
+.cs-summary-header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--cs-accent);
+}
+.cs-summary-header h2 { margin: 0; font-size: 1.15em; color: var(--cs-accent); }
+.cs-date { font-size: 0.78em; opacity: 0.6; }
+
+/* ── Buttons ──────────────────────────────────────────────────────────── */
+.cs-export-btn {
+  background: color-mix(in srgb, var(--cs-healed) 15%, var(--cs-bg));
+  color: var(--cs-healed);
+  border: 1px solid color-mix(in srgb, var(--cs-healed) 40%, transparent);
+  border-radius: 4px;
+  padding: 3px 10px;
+  cursor: pointer;
+  font-size: 0.78em;
+  font-family: inherit;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: background 0.15s;
+}
+.cs-export-btn:hover { background: color-mix(in srgb, var(--cs-healed) 25%, var(--cs-bg)); }
+
+button.cs-danger {
+  background: color-mix(in srgb, var(--cs-dealt) 12%, var(--cs-bg));
+  color: var(--cs-dealt);
+  border: 1px solid color-mix(in srgb, var(--cs-dealt) 30%, transparent);
+  border-radius: 4px;
+  padding: 3px 8px;
+  cursor: pointer;
+  font-size: 0.78em;
+  font-family: inherit;
+  transition: background 0.15s;
+}
+button.cs-danger:hover { background: color-mix(in srgb, var(--cs-dealt) 25%, var(--cs-bg)); }
+
+/* "Cancella tutto": pulsante distinto, isolato dagli altri per evitare misclick
+   (v. bugfix cestino ambiguo — icona/testo diversi + margine di separazione). */
+button.cs-clear-all-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 10px;
+  border-width: 2px;
+  font-weight: 600;
+}
+
+.cs-undo-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: color-mix(in srgb, var(--cs-healed) 15%, var(--cs-bg));
+  color: var(--cs-healed);
+  border: 1px solid color-mix(in srgb, var(--cs-healed) 40%, transparent);
+  border-radius: 4px;
+  padding: 3px 10px;
+  cursor: pointer;
+  font-size: 0.78em;
+  font-family: inherit;
+  font-weight: 600;
+  transition: background 0.15s;
+}
+.cs-undo-btn:hover { background: color-mix(in srgb, var(--cs-healed) 28%, var(--cs-bg)); }
+
+/* ── No data ──────────────────────────────────────────────────────────── */
+.cs-no-data {
+  text-align: center;
+  color: color-mix(in srgb, var(--cs-text) 40%, transparent);
+  padding: 30px 20px;
+  font-style: italic;
+  line-height: 1.8;
+}
+
+/* ── Whole wrap ───────────────────────────────────────────────────────── */
+/* Foundry's own .window-content needs a hard height + hidden overflow for
+   our inner flex layout to be able to scroll at all — otherwise "height:
+   100%" on .cs-charts-wrap resolves against an "auto" ancestor height and
+   overflowing content (e.g. a Single Fight tab with many enemies) just
+   spills past the window frame with no scrollbar, instead of scrolling. */
+#combat-stats-charts .window-content {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+.cs-charts-wrap {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+/* ══ Settings form ═════════════════════════════════════════════════════════ */
+
+.cs-settings-form {
+  padding: 4px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.cs-settings-section {
+  padding: 10px 14px;
+  border-bottom: 1px solid color-mix(in srgb, var(--cs-accent) 20%, transparent);
+}
+.cs-settings-section:last-child { border-bottom: none; }
+
+.cs-settings-section h3 {
+  margin: 0 0 8px;
+  font-size: 0.85em;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--cs-accent);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.cs-setting-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.cs-setting-row label {
+  flex: 1;
+  font-size: 0.88em;
+  color: var(--cs-text);
+}
+.cs-setting-row select {
+  background: color-mix(in srgb, var(--cs-bg) 80%, black);
+  color: var(--cs-text);
+  border: 1px solid color-mix(in srgb, var(--cs-accent) 40%, transparent);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 0.85em;
+  min-width: 200px;
+}
+.cs-hint {
+  font-size: 0.75em;
+  opacity: 0.5;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.cs-setting-toggle {
+  justify-content: space-between;
+}
+.cs-setting-toggle input[type=checkbox] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--cs-accent);
+  flex-shrink: 0;
+}
+
+/* Colour grid */
+.cs-color-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px 10px;
+  margin-bottom: 10px;
+}
+.cs-color-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.cs-color-item input[type=color] {
+  width: 36px;
+  height: 26px;
+  border: 1px solid color-mix(in srgb, var(--cs-accent) 40%, transparent);
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 2px;
+  background: transparent;
+}
+.cs-color-item label {
+  font-size: 0.72em;
+  opacity: 0.7;
+  text-align: center;
+  color: var(--cs-text);
+}
+
+/* Footer buttons */
+.cs-settings-footer {
+  padding: 12px 16px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  background: color-mix(in srgb, var(--cs-bg) 60%, black);
+}
+.cs-btn-primary {
+  background: var(--cs-accent);
+  color: #1a1a24;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 18px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  font-size: 0.85em;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: filter 0.15s;
+}
+.cs-btn-primary:hover { filter: brightness(1.15); }
+.cs-btn-secondary {
+  background: color-mix(in srgb, #d4af37 10%, #1a1a24);
+  color: #d4af37;
+  border: 1px solid color-mix(in srgb, #d4af37 40%, transparent);
+  border-radius: 4px;
+  padding: 6px 14px;
+  font-family: inherit;
+  cursor: pointer;
+  font-size: 0.85em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  transition: background 0.15s;
+  line-height: 1.4;
+}
+.cs-btn-secondary:hover {
+  background: color-mix(in srgb, #d4af37 20%, #1a1a24);
+}
+
+.cs-btn-danger {
+  background: color-mix(in srgb, #ce4141 10%, #1a1a24);
+  color: #ce4141;
+  border: 1px solid color-mix(in srgb, #ce4141 40%, transparent);
+  border-radius: 4px;
+  padding: 6px 14px;
+  font-family: inherit;
+  cursor: pointer;
+  font-size: 0.85em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  transition: background 0.15s;
+  line-height: 1.4;
+}
+.cs-btn-danger:hover {
+  background: color-mix(in srgb, #ce4141 25%, #1a1a24);
+}
+
+/* Dialog nome scontro */
+.combat-stats-dialog .dialog-button {
+  background: var(--cs-accent, #d4af37) !important;
+  color: #1a1a24 !important;
+  font-weight: 700 !important;
+}
+
+/* ── Sub-value inline (chat card) ────────────────────────────────────── */
+.cs-sub {
+  display: block;
+  font-size: 0.72em;
+  font-weight: 500;
+  opacity: 0.8;
+  margin-top: 1px;
+}
+
+/* ── Sub-value columns (overkill / excess / overheal) ───────────────── */
+.cs-table td.cs-over     { color: var(--cs-overkill,     #cc2200); font-weight: 600; }
+.cs-table td.cs-excess   { color: var(--cs-excess-taken, #a855f7); font-weight: 600; }
+.cs-table td.cs-overheal { color: var(--cs-overhealing,  #1abc9c); font-weight: 600; }
+.cs-table td.cs-maxhit   { color: var(--cs-maxhit,       #ff4500); font-weight: 700; }
+.cs-table td.cs-maxheal  { color: var(--cs-maxheal,      #27ae60); font-weight: 700; }
+.cs-table td.cs-downed   { color: var(--cs-downed,       #e8e8e8); font-weight: 700; }
+
+/* ── Kills column ─────────────────────────────────────────────────────── */
+.cs-table td.cs-kills {
+  color: color-mix(in srgb, var(--cs-accent) 90%, white);
+  font-weight: 600;
+}
+
+/* ── Defeated enemies list ────────────────────────────────────────────── */
+.cs-defeated-list {
+  margin-top: 10px;
+  border: 1px solid color-mix(in srgb, var(--cs-accent) 25%, transparent);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.cs-defeated-header {
+  background: color-mix(in srgb, var(--cs-accent) 12%, var(--cs-bg));
+  color: var(--cs-accent);
+  font-size: 0.82em;
+  font-weight: 700;
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-bottom: 1px solid color-mix(in srgb, var(--cs-accent) 20%, transparent);
+}
+.cs-defeated-names {
+  padding: 8px 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.cs-defeated-tag {
+  background: color-mix(in srgb, var(--cs-dealt) 12%, var(--cs-bg));
+  border: 1px solid color-mix(in srgb, var(--cs-dealt) 30%, transparent);
+  color: var(--cs-text);
+  border-radius: 12px;
+  padding: 2px 10px;
+  font-size: 0.8em;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.cs-defeated-tag small {
+  opacity: 0.6;
+  font-size: 0.85em;
+}
+
+/* ── Closeable tab ────────────────────────────────────────────────────── */
+.cs-tab-close-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: 0.72em;
+  line-height: 1;
+  color: color-mix(in srgb, var(--cs-text) 50%, transparent);
+  cursor: pointer;
+  flex-shrink: 0;
+  margin-left: -4px; /* visually glue it to the tab */
+  margin-bottom: 4px; /* align with tab baseline */
+  transition: background 0.15s, color 0.15s;
+}
+.cs-tab-close-x:hover {
+  background: color-mix(in srgb, var(--cs-dealt) 25%, transparent);
+  color: var(--cs-dealt);
+}
+
+/* ── Delete fight button in header ───────────────────────────────────── */
+.cs-delete-fight-btn {
+  margin-left: auto;
+  font-size: 0.78em;
+  padding: 3px 10px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* ── Kill tag: "Killer ☠ Victim" format ──────────────────────────────── */
+.cs-defeated-tag {
+  background: color-mix(in srgb, var(--cs-dealt) 10%, var(--cs-bg));
+  border: 1px solid color-mix(in srgb, var(--cs-dealt) 25%, transparent);
+  color: var(--cs-text);
+  border-radius: 20px;
+  padding: 3px 12px;
+  font-size: 0.82em;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.cs-killer {
+  color: var(--cs-accent);
+  font-weight: 700;
+}
+.cs-kill-icon {
+  color: var(--cs-dealt);
+  font-size: 0.85em;
+  opacity: 0.8;
+}
+.cs-victim {
+  color: color-mix(in srgb, var(--cs-text) 70%, transparent);
+}
+
+/* ── Enemies section (Totals / Single Fight tabs) ────────────────────────── */
+.cs-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 18px 0 8px;
+  font-size: 1em;
+  color: var(--cs-accent);
+  border-top: 1px solid color-mix(in srgb, var(--cs-accent) 35%, transparent);
+  padding-top: 14px;
+}
+.cs-table-enemies .cs-name {
+  color: color-mix(in srgb, var(--cs-text) 85%, transparent);
+}/* ── Abilities tab (damage meter, stile Warcraft Logs) ───────────────── */
+.cs-dmgmeter-wrap  { display: flex; gap: 24px; flex-wrap: wrap; }
+.cs-dmgmeter-wrap .cs-ability-block { flex: 1 1 420px; min-width: 320px; }
+.cs-ability-block { margin-top: 16px; }
+.cs-ability-name  { margin: 0 0 6px; font-size: 1em; }
+.cs-table-wrap    { overflow-x: auto; max-width: 100%; }
+.cs-table-wrap .cs-table { white-space: nowrap; }
+
+.cs-dmgmeter    { display: flex; flex-direction: column; gap: 5px; }
+.cs-dmg-row {
+  position: relative;
+  height: 34px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+}
+.cs-dmg-bar {
+  position: absolute;
+  top: 0; left: 0; height: 100%;
+  opacity: 0.55;
+  border-radius: 4px;
+  transition: width 0.2s ease-out;
+}
+.cs-dmg-label {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 100%;
+  padding: 0 10px;
+  font-size: 0.82em;
+}
+.cs-dmg-name  { font-weight: 700; flex: 0 0 auto; }
+.cs-dmg-sub   { flex: 1 1 auto; opacity: 0.7; font-size: 0.9em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cs-dmg-total { flex: 0 0 auto; font-weight: 700; white-space: nowrap; }
+.cs-dmg-total small { opacity: 0.6; font-weight: 400; }
+
+.cs-char-chip {
+  padding: 4px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--cs-accent, #d4af37);
+  background: transparent;
+  color: var(--cs-text, #eee);
+  font-size: 0.85em;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.15s, background 0.15s;
+}
+.cs-char-chip:hover { opacity: 0.85; }
+.cs-char-chip.active {
+  opacity: 1;
+  background: var(--cs-accent, #d4af37);
+  color: #1a1a1a;
+  font-weight: 700;
+}
+
+/* ── Enemies tab: scroll container for long enemy lists, per-row delete ── */
+.cs-table-scroll {
+  max-height: 60vh;
+  overflow-y: auto;
+  border: 1px solid color-mix(in srgb, var(--cs-dealt) 30%, transparent);
+  border-radius: 6px;
+}
+.cs-table-scroll .cs-table { margin: 0; border-radius: 0; }
+.cs-table-scroll thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--cs-bg-row, #1a1a1a);
+}
+.cs-delete-enemy-row {
+  background: transparent;
+  border: none;
+  color: #ce4141;
+  opacity: 0.6;
+  cursor: pointer;
+  padding: 2px 6px;
+}
+.cs-delete-enemy-row:hover { opacity: 1; }
