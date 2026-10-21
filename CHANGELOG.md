@@ -1,3 +1,14 @@
+# v1.0.0-rc3
+
+- Fixed missing initiative roster members and excluded off-initiative tokens.
+- Fixed HP delta omission when unused Wounds/Vigor paths coexist with HP.
+- Added synthetic token update observation.
+- Aligned Apply Damage chat source capture with NAS target selection order.
+- Enabled module socket for player -> GM click attribution.
+- Added initiative-gated manual recording and defeated transitions.
+- Extended offline test suite and documented rc1 mismatch in live logs.
+- Remains a test candidate requiring runtime verification.
+
 # v1.0.0-rc2
 
 - Register every combatant when combat starts and as combatants join, even at zero damage.

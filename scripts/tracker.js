@@ -13,7 +13,7 @@ const now = () => Date.now();
 const uid = () => foundry.utils.randomID();
 const n = v => Number.isFinite(Number(v)) ? Number(v) : 0;
 const abs = v => Math.max(0, Math.round(n(v)));
-const SOURCE_TTL = 90000; // Applying a chat card may require confirming a damage dialog.
+const SOURCE_TTL = 90000; // Dialog confirmation may take time; stale intents expire.
 const DEFEAT_SETTLE_MS = 350;
 const SOCKET_CHANNEL = 'module.pf1e-combat-stats';
 
@@ -33,8 +33,10 @@ function health(actor) {
 }
 export function resourceDelta(before,after) {
   const result = { soakDamage:0,vigorDamage:0,woundDamage:0,hpDamage:0,vigorHealing:0,woundHealing:0,hpHealing:0,soakRestored:0 };
-  // When Wounds/Vigor are in use, avoid counting system HP again.
-  const variants = (before.vigor !== null && after.vigor !== null) || (before.wounds !== null && after.wounds !== null);
+  // Do not drop HP just because a PF1e NPC happens to expose dormant
+  // Vigor/Wounds fields. Skip HP only when one of those pools ACTUALLY moved.
+  const variants = (before.vigor !== null && after.vigor !== null && before.vigor !== after.vigor) ||
+    (before.wounds !== null && after.wounds !== null && before.wounds !== after.wounds);
   for (const [resource, key] of [['soak','soak'],['vigor','vigor'],['wounds','wounds'],['hp','hp']]) {
     if (resource==='hp' && variants) continue;
     if (before[resource] === null || after[resource] === null) continue;
@@ -91,6 +93,7 @@ export class CombatTracker {
     this._seen = new Set();
     this._combatInitializing = new Set();
     this._defeatTimers = new Map();
+    this._combatDocuments = new Map(); // Keep deleted-combat document through final flush.
     this._startup = false;
   }
   _gm() {
@@ -98,15 +101,10 @@ export class CombatTracker {
     return Boolean(game.user?.isGM && gm?.id===game.user?.id);
   }
   _combat(actor){
-    const list = [...(game.combats?.contents ?? game.combats ?? [])];
-    const found=list.find(c => c.started && [...(c.combatants ?? [])].some(cb => matchesCombatant(cb,actor)));
-    if(found)return found;
-    // A GM may damage a scene token that was never added to the initiative roster.
-    // Only count it when it is actually represented on the active combat scene.
-    const scene=actor?.token?.parent ?? null;
-    const inScene=Boolean(actor?.token) || (canvas?.tokens?.placeables??[]).some(t=>t.actor?.uuid===actor.uuid);
-    if(!inScene)return null;
-    return list.find(c=>c.started && c.scene?.id === (scene?.id??canvas?.scene?.id)) ?? null;
+    // Only actual initiative combatants belong to a fight. Other tokens on the
+    // scene must not appear in the statistics, even if they take damage.
+    return [...(game.combats?.contents ?? game.combats ?? [])]
+      .find(c=>c.started && [...(c.combatants??[])].some(cb=>matchesCombatant(cb,actor))) ?? null;
   }
   // Ensure current is associated with an actual combat. Prevents default
   // blank-setting recording when a scene is open but no combat is running.
@@ -124,10 +122,7 @@ export class CombatTracker {
       if('defeated' in changes && c.actor) this._scheduleDefeat(c.actor,c.parent,Boolean(changes.defeated));
     });
     Hooks.on('createCombatant',c=>{if(c.actor){this._snapshot.set(c.actor.uuid,health(c.actor));this._registerCombatant(c.parent,c);}});
-    Hooks.on('updateToken',(doc,changes)=>{
-      const cb=this._combat(doc.actor);
-      if(cb && (Object.hasOwn(changes,'overlayEffect') || Object.hasOwn(changes,'effects'))) this._scheduleDefeat(doc.actor,cb);
-    });
+    Hooks.on('updateToken',(doc,changes,options,userId)=>this._observeToken(doc,changes,options,userId));
     Hooks.on('createChatMessage',msg=>this._noteChatMessage(msg));
     game.socket?.on?.(SOCKET_CHANNEL,(message,senderId)=>this._socketMessage(message,senderId));
     if(globalThis.document) document.addEventListener('click',ev=>this._chatApplyClick(ev),true);
@@ -136,6 +131,18 @@ export class CombatTracker {
     Hooks.on('createToken',doc=>{if(doc.actor) this._snapshot.set(doc.actor.uuid,health(doc.actor));});
     this._startup=false;
     for (const c of game.combats ?? []) if(c.started && this._gm()) this._begin(c);
+  }
+  _observeToken(doc,changes={},options={},userId=null){
+    // v13 synthetic Actor changes may arrive via TokenDocument.delta, not
+    // updateActor. Snapshots prevent duplicate events from both hooks.
+    if(doc?.actor){
+      this._update(doc.actor,changes,options,userId);
+      if(Object.hasOwn(changes,'delta') || Object.hasOwn(changes,'actorData')) {
+        queueMicrotask(()=>{if(doc.actor)this._update(doc.actor,changes,options,userId);});
+      }
+    }
+    const combat=this._combat(doc?.actor);
+    if(combat && (Object.hasOwn(changes,'overlayEffect') || Object.hasOwn(changes,'effects'))) this._scheduleDefeat(doc.actor,combat);
   }
   refreshSnapshots(){
     for(const actor of game.actors ?? []) {if(!this._snapshot.has(actor.uuid)) this._snapshot.set(actor.uuid,health(actor));this._lastDowned.set(actor.uuid,this._isDown(actor));}
@@ -152,7 +159,8 @@ export class CombatTracker {
     return Boolean(actor?.statuses?.has?.('dead') || (combatant?.defeated && game.settings.get(MODULE_ID,'defeatedCountsAsKill')));
   }
   _scheduleDefeat(actor,combat,explicit=null) {
-    if(!actor || !combat || !this._gm()) return;
+    if(!actor || !combat || !this._gm() ||
+      ![...(combat.combatants??[])].some(c=>matchesCombatant(c,actor))) return;
     const down = explicit===null ? this._isDown(actor,combat) : explicit;
     const key=`${combat.id}|${actor.uuid}`;
     if(!down){
@@ -199,21 +207,33 @@ export class CombatTracker {
   _chatApplyClick(ev){
     if(!game.settings.get(MODULE_ID,'chatCardAttribution'))return;
     const button=ev.target?.closest?.('[data-action="applyDamage"], [data-action="apply-damage"]');
-    const element=button?.closest?.('.chat-message[data-message-id]');
+    const element=button?.closest?.('.chat-message[data-message-id], [data-message-id].chat-message');
     if(!element)return;
     const message=game.messages?.get?.(element.dataset.messageId);
-    if(!message?.speaker?.actor) return;
-    const list=Array.isArray(message.system?.targets)?message.system.targets:[];
-    // PF1e / Nevela chat messages include explicit target token document IDs.
-    // Do not infer an attacker from current user targets or a nearby roll.
-    if(!list.length)return;
+    if(!message?.speaker) return;
+    // This is only an action INTENT. No damage is recorded here. Actual loss
+    // must still be observed on an enrolled target after the click.
+    const toActor = t => t?.actor ?? t?.document?.actor ?? t?.object?.actor ?? null;
+    const toDocument = id => canvas?.scene?.tokens?.get?.(id) ?? actorFromUuid(id);
+    const listed=Array.isArray(message.system?.targets)
+      ? message.system.targets.map(toDocument).filter(Boolean):[];
+    // Verified against NAS normalizeTargets(): controlled first, then targets,
+    // then message.targets for a click-context application.
+    const controlled=[...(canvas?.tokens?.controlled??[])];
+    const targeted=[...(game.user?.targets??[])];
+    const cardTargets=[...(message.targets??[])];
+    const candidates=controlled.length ? controlled : targeted.length ? targeted
+      : cardTargets.length ? cardTargets : listed;
+    const combat=game.combat;
     const targetUuids=[];
-    for(const id of list){
-      const doc=canvas?.scene?.tokens?.get?.(id)??actorFromUuid(id);
-      if(doc?.actor?.uuid)targetUuids.push(doc.actor.uuid);
+    for(const candidate of candidates) {
+      const actor=toActor(candidate);
+      if(actor && combat?.started && [...combat.combatants].some(c=>matchesCombatant(c,actor)))
+        targetUuids.push(actor.uuid);
     }
-    if(!targetUuids.length)return;
+    if(!targetUuids.length){this._debug('chat apply clicked without enrolled target',message.id);return;}
     const msg={type:'chatApplied',messageId:message.id,targetUuids:[...new Set(targetUuids)]};
+    this._debug('chat apply intent',msg);
     if(this._gm()) this._socketMessage(msg,game.user.id);
     else game.socket?.emit?.(SOCKET_CHANNEL,msg);
   }
@@ -222,23 +242,32 @@ export class CombatTracker {
     const sender=game.users?.get?.(senderId)??[...(game.users??[])].find(x=>x.id===senderId);
     const message=game.messages?.get?.(payload.messageId);
     if(!message || !sender || !sender.active || (!sender.isGM && message.user?.id!==senderId && message.user!==senderId))return;
-    const source=message.speaker?.token
-      ? canvas?.scene?.tokens?.get?.(message.speaker.token)?.actor
-      : game.actors?.get?.(message.speaker?.actor);
-    if(!source)return;
-    const approved=new Set((message.system?.targets??[]).map(id=>{
+    const combat=game.combat;
+    if(!combat?.started) return;
+    const source=(message.speaker?.token
+      ? canvas?.scene?.tokens?.get?.(message.speaker.token)?.actor : null)
+      ?? game.actors?.get?.(message.speaker?.actor)
+      ?? message.actor ?? null;
+    if(!source || ![...combat.combatants].some(c=>matchesCombatant(c,source)))return;
+    const listed=Array.isArray(message.system?.targets)?message.system.targets:[];
+    const approved=new Set(listed.map(id=>{
       const doc=canvas?.scene?.tokens?.get?.(id)??actorFromUuid(id);return doc?.actor?.uuid;
     }).filter(Boolean));
-    for(const uuid of payload.targetUuids){
-      if(!approved.has(uuid))continue;
-      const target=actorFromUuid(uuid)??[...(canvas?.tokens?.placeables??[])].find(t=>t.actor?.uuid===uuid)?.actor;
-      if(target)this.queueSource({sourceActor:source,targetActor:target,itemName:message.item?.name??message.system?.item?.name??'Damage card',messageId:message.id});
+    for(const uuid of payload.targetUuids.slice(0,40)){
+      // When PF1e's chat card lacks explicit targets, a user-selected target
+      // is only a candidate. It is counted only if its actual resources fall.
+      if(approved.size && !approved.has(uuid))continue;
+      const target=[...combat.combatants].map(combatActor).find(a=>a?.uuid===uuid);
+      if(!target)continue;
+      if(this.queueSource({sourceActor:source,targetActor:target,itemName:message.item?.name??message.system?.item?.name??'Damage card',messageId:message.id}))
+        this._debug('queued source',source.name,'->',target.name,message.id);
     }
   }
   _debug(...x){ if(game.settings.get(MODULE_ID,'debug')) console.debug('PF1e Combat Stats |',...x); }
   async _begin(combat) {
     if(!this._gm() || !this._hasCombat(combat) || this._combatInitializing.has(combat.id)) return;
     this._combatInitializing.add(combat.id);
+    this._combatDocuments.set(combat.id,combat);
     try{
       const current=game.settings.get(MODULE_ID,SETTING_CURRENT)??{};
       if(current.combatId===combat.id) {
@@ -263,18 +292,22 @@ export class CombatTracker {
     await this._writer.catch(()=>{});
     const current=game.settings.get(MODULE_ID,SETTING_CURRENT)??{};
     if(current.combatId!==combat.id) return;
+    // Catch actors who joined initiative shortly before the encounter ended.
+    for(const cb of combat.combatants??[]) if(cb.actor)await this._registerCombatant(combat,cb);
+    const finalState=game.settings.get(MODULE_ID,SETTING_CURRENT)??current;
     const history=game.settings.get(MODULE_ID,SETTING_HISTORY)??[];
     if(history.some(h=>h.combatId===combat.id)) { await game.settings.set(MODULE_ID,SETTING_CURRENT,{});return; }
-    const record={...current,id:uid(),name:current.fightName||combat.name||'Combat',date:new Date().toISOString()};
+    const record={...finalState,id:uid(),name:finalState.fightName||combat.name||'Combat',date:new Date().toISOString()};
     await game.settings.set(MODULE_ID,SETTING_HISTORY,[...history,record]);
     await game.settings.set(MODULE_ID,SETTING_CURRENT,{});
+    this._combatDocuments.delete(combat.id);
     if(game.settings.get(MODULE_ID,'summaryEnabled')) await SummaryApp.openOnce(record);
   }
   /** An optional explicit trusted attribution context supplied by a PF1e chat macro.
    * Merely targeting an enemy does not establish who damaged it. */
   queueSource({sourceActor,targetActor,itemName='',messageId='',ttl=SOURCE_TTL}={}){
     const src=findActor(sourceActor),tgt=findActor(targetActor);
-    if(!src || !tgt) return false;
+    if(!src || !tgt || !this._combat(tgt)) return false;
     const contexts=this._sourceContext.get(tgt.uuid)??[];
     if(messageId && contexts.some(x=>x.messageId===String(messageId) && x.expires>now())) return true;
     contexts.push({source:participant(src),itemName:String(itemName||''),messageId:String(messageId||''),expires:now()+Math.min(120000,Math.max(1000,ttl))});
@@ -295,9 +328,10 @@ export class CombatTracker {
     if(!old || !this._gm() || !game.settings.get(MODULE_ID,'enabled')) return;
     const combat = this._combat(actor);
     if(!this._hasCombat(combat)) return;
-    // Damage to a scene enemy not enrolled in the initiative tracker is still combat damage.
+    // NEVER include a scene token unless it is enrolled in this encounter.
     const member=[...(combat.combatants??[])].find(cb=>matchesCombatant(cb,actor));
-    if(member) void this._registerCombatant(combat,member);
+    if(!member)return;
+    void this._registerCombatant(combat,member);
     const delta=resourceDelta(old,next);
     if(hasChange(delta) && !Object.keys(delta).every(k=>k==='soakRestored'||!delta[k]))
       this._enqueue(actor,combat,delta,userId,options);
@@ -356,8 +390,12 @@ export class CombatTracker {
       state.events=state.events??[];state.events.push(incoming);
       if(state.events.length>15000){state.events.shift();state.processedIds.shift();}
       const byId=(id,uuid)=>actorFromUuid(uuid)??game.actors?.get?.(id)??[...(canvas?.tokens?.placeables??[])].find(x=>x.actor?.uuid===uuid)?.actor;
+      const combat=[...(game.combats??[])].find(c=>c.id===incoming.combatId) ??
+        this._combatDocuments.get(incoming.combatId);
       const target=byId(incoming.targetActorId,incoming.targetActorUuid);
       const src=byId(incoming.sourceActorId,incoming.sourceActorUuid);
+      if(!combat || !target || ![...combat.combatants].some(cb=>matchesCombatant(cb,target))) return;
+      if(src && ![...combat.combatants].some(cb=>matchesCombatant(cb,src))) return;
       const ensureRecord=(actor,role,meta={})=>{
         const bucket=meta.isCharacter ?? (actor?characterActor(actor):false) ? 'characters':'enemies';
         const id=meta.isToken ? (meta.uuid??actor?.uuid) : (actor?.isToken?actor.uuid:(actor?.id??meta.id??meta.uuid));
@@ -410,7 +448,8 @@ export class CombatTracker {
     const combat=game.combat;
     if(!this._hasCombat(combat)||!this._gm()) return false;
     const tgt=findActor(targetActor),src=findActor(sourceActor);
-    if(!tgt) return false;
+    if(!tgt || ![...combat.combatants].some(c=>matchesCombatant(c,tgt)) ||
+      (src && ![...combat.combatants].some(c=>matchesCombatant(c,src)))) return false;
     const amt=abs(amount);
     if(!amt||amt>10000000) return false;
     const e={eventId:uid(),combatId:combat.id,createdAt:new Date().toISOString(),round:combat.round??0,turn:combat.turn??0,
