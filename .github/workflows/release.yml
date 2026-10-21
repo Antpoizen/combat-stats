@@ -12,29 +12,29 @@ jobs:
   build:
     name: Build and Release
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
+      - name: Checkout tagged source
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Set version
+      - name: Set release version
         id: version
         shell: bash
         run: |
           echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
           echo "number=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
-      - name: Update module manifest for release
+      - name: Update module.json for this release
         env:
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
           RELEASE_VERSION: ${{ steps.version.outputs.number }}
           REPOSITORY: ${{ github.repository }}
         shell: bash
         run: |
-          jq --arg version "$RELEASE_VERSION" \
-             --arg download "https://github.com/$REPOSITORY/releases/download/$RELEASE_TAG/$RELEASE_TAG.zip" \
-             '.version = $version | .download = $download' \
-             module.json > module.tmp.json
+          DOWNLOAD_URL="https://github.com/$REPOSITORY/releases/download/$RELEASE_TAG/$RELEASE_TAG.zip"
+          jq --arg version "$RELEASE_VERSION" --arg download "$DOWNLOAD_URL" \
+            '.version = $version | .download = $download' module.json > module.tmp.json
           mv module.tmp.json module.json
           cat module.json
 
@@ -47,17 +47,37 @@ jobs:
             -x '.git/*' '.github/*' '*.zip'
           mv "$RUNNER_TEMP/$RELEASE_TAG.zip" .
 
-      - name: Publish GitHub release
+      - name: Create or update release and upload assets
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
         shell: bash
         run: |
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" "$RELEASE_TAG.zip" --clobber
+            gh release upload "$RELEASE_TAG" "$RELEASE_TAG.zip" module.json --clobber
           else
-            gh release create "$RELEASE_TAG" "$RELEASE_TAG.zip" \
-              --title "Release $RELEASE_TAG" \
-              --generate-notes \
-              --verify-tag
+            gh release create "$RELEASE_TAG" "$RELEASE_TAG.zip" module.json \
+              --title "Release $RELEASE_TAG" --generate-notes --verify-tag
+          fi
+
+      - name: Commit updated module.json to master
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.version.outputs.number }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          git fetch origin master
+          git worktree add "$RUNNER_TEMP/release-master" origin/master
+          cd "$RUNNER_TEMP/release-master"
+          DOWNLOAD_URL="https://github.com/$REPOSITORY/releases/download/$RELEASE_TAG/$RELEASE_TAG.zip"
+          jq --arg version "$RELEASE_VERSION" --arg download "$DOWNLOAD_URL" \
+            '.version = $version | .download = $download' module.json > module.tmp.json
+          mv module.tmp.json module.json
+          if ! git diff --quiet -- module.json; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add module.json
+            git commit -m "Update module.json for $RELEASE_TAG"
+            git push origin HEAD:master
           fi
