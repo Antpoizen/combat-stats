@@ -38,6 +38,7 @@ Hooks.once('init',()=>{
   add('vigorPath','system.attributes.vigor.value','world',true,{name:'Vigor resource path'});
   add('woundsPath','system.attributes.wounds.value','world',true,{name:'Wounds resource path'});
   add('hpPath','system.attributes.hp.value','world',true,{name:'HP fallback path'});
+  add('turnAttributionFallback',true,'world',true,{name:'Use current initiative turn when attacker is not otherwise identified',hint:'Marks damage as INFERRED; reactions and delayed effects can be misattributed. Disable for strictly verified statistics.'});
   add('chatCardAttribution',true,'world',true,{name:'Attribute damage from explicit PF1e chat-card Apply actions',hint:'Only when a chat card identifies its actor and the affected token documents. Does not infer damage from targeting alone.'});
   add('defeatedCountsAsKill',true,'world',true,{name:'Count defeated combatants as kills',hint:'Credit a kill to the most recent explicitly attributed attacker. Disable if Defeated means unconscious rather than killed in your campaign.'});
   add('debug',false,'world',true,{name:'Diagnostic logging'});

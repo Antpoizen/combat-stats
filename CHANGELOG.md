@@ -1,3 +1,13 @@
+# v1.0.0-rc4
+
+- Fixed multiple unlinked tokens using the same base Actor ID collapsing into a single combatant. Combatant-scoped keys now distinguish Token IDs and display same-named NPCs as `Bloodling [1]` and `Bloodling [2]`.
+- Added initiative-combatant-only 250 ms resource polling fallback for synthetic token ActorDelta updates not visible to the previous observer.
+- Tracked source and target by combatant identity rather than resolving shared world Actor IDs.
+- Added initiative-turn fallback for unmatched source damage (default on, marked `inferred-turn`). Documented the out-of-turn and delayed damage misattribution risk; can be disabled in settings.
+- Reconciled resource changes and waited for pending downed/defeated events at combat end.
+- Added offline reproduction of the October 21 Daleira/Tangra/two-Bloodlings encounter (57 dealt/61 taken for Daleira, 84 dealt by Tangra, Bloodlings 127 and 14 taken, and a kill).
+- Version remains a runtime-unverified development release candidate.
+
 # v1.0.0-rc3
 
 - Fixed missing initiative roster members and excluded off-initiative tokens.

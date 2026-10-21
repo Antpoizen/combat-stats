@@ -15,6 +15,8 @@ const n = v => Number.isFinite(Number(v)) ? Number(v) : 0;
 const abs = v => Math.max(0, Math.round(n(v)));
 const SOURCE_TTL = 90000; // Dialog confirmation may take time; stale intents expire.
 const DEFEAT_SETTLE_MS = 350;
+const ROSTER_POLL_MS = 250; // Backup observation for v13 synthetic token ActorDelta changes.
+
 const SOCKET_CHANNEL = 'module.pf1e-combat-stats';
 
 function health(actor) {
@@ -56,16 +58,51 @@ function characterActor(actor) {
   // Player ownership is the strongest indication; character sheet type is a fallback.
   return actor?.hasPlayerOwner === true || actor?.type === 'character';
 }
-function actorKey(actor) { return actor?.isToken && actor?.uuid ? actor.uuid : (actor?.id ?? actor?.uuid); }
+// In v13 two unlinked tokens may both have Actor.YR... IDs; their Token IDs
+// uniquely identify their synthetic actors. Always prefer Token identity.
+function tokenInfo(actor) {
+  const uuid = String(actor?.uuid ?? '');
+  const match = uuid.match(/Scene\.([^.]+)\.Token\.([^.]+)/);
+  return { tokenId: match?.[2] ?? actor?.token?.id ?? actor?.token?._id ?? null,
+    sceneId: match?.[1] ?? actor?.token?.parent?.id ?? null };
+}
+function actorKey(actor) {
+  const t=tokenInfo(actor);
+  return t.tokenId ? `${t.sceneId ?? 'scene'}:Token:${t.tokenId}` : (actor?.id ?? actor?.uuid);
+}
 function combatActor(combatant) { return combatant?.actor ?? combatant?.token?.actor ?? null; }
-function matchesCombatant(combatant, actor) {
-  if (!actor || !combatant) return false;
-  const subject = combatActor(combatant);
-  if (subject === actor || (subject?.uuid && subject.uuid === actor.uuid)) return true;
-  if (actor.token && combatant.tokenId && actor.token.id === combatant.tokenId &&
-      (!combatant.sceneId || combatant.sceneId === actor.token.parent?.id)) return true;
-  // Do not match an unlinked token actor by its base Actor ID: other tokens can share it.
-  return !actor.isToken && Boolean(combatant.actorId && combatant.actorId === actor.id);
+function combatantKey(cb) {
+  return cb?.tokenId ? `${cb.sceneId ?? cb.parent?.scene?.id ?? 'scene'}:Token:${cb.tokenId}` : String(cb?.actorId ?? cb?.actor?.id ?? cb?.id ?? '');
+}
+function matchesCombatant(cb,actor) {
+  if(!cb || !actor) return false;
+  const token=tokenInfo(actor);
+  // A token-specific update must NEVER match another token with the same base actor.
+  if(token.tokenId) {
+    return Boolean(cb.tokenId && cb.tokenId===token.tokenId &&
+      (!token.sceneId || !cb.sceneId || cb.sceneId===token.sceneId));
+  }
+  const subject=combatActor(cb);
+  const subjectToken=tokenInfo(subject);
+  if(subjectToken.tokenId) return false;
+  return Boolean((subject?.uuid && subject.uuid===actor.uuid) ||
+    (cb.actorId && cb.actorId===actor.id));
+}
+function actorForCombatant(cb) {
+  if(cb?.tokenId && canvas?.scene &&
+    (!cb.sceneId || cb.sceneId===canvas.scene.id)) {
+    const doc=canvas.scene.tokens?.get?.(cb.tokenId);
+    if(doc?.actor) return doc.actor;
+  }
+  return combatActor(cb);
+}
+function displayNameForCombatant(combat,cb,actor) {
+  const name=String(cb?.name || actor?.name || 'Unknown');
+  const copies=[...(combat?.combatants??[])].filter(other=>
+    String(other?.name || actorForCombatant(other)?.name || 'Unknown')===name);
+  if(copies.length<=1) return name;
+  const index=copies.findIndex(other=>combatantKey(other)===combatantKey(cb));
+  return index<0 ? name : `${name} [${index+1}]`;
 }
 function actorFromUuid(uuid) {
   if (!uuid) return null;
@@ -94,6 +131,7 @@ export class CombatTracker {
     this._combatInitializing = new Set();
     this._defeatTimers = new Map();
     this._combatDocuments = new Map(); // Keep deleted-combat document through final flush.
+    this._pollTimer = null;
     this._startup = false;
   }
   _gm() {
@@ -112,16 +150,20 @@ export class CombatTracker {
   init(){
     this._startup=true;
     this.refreshSnapshots();
-    Hooks.on('canvasReady',()=>this.refreshSnapshots());
+    Hooks.on('canvasReady',()=>{this.refreshSnapshots(); this._pollCombatants();});
+    // updateActor can miss or expose stale synthetic ActorDelta state in some
+    // module workflows. Poll *initiative members only* as an independent backup.
+    this._pollTimer=setInterval(()=>this._pollCombatants(),ROSTER_POLL_MS);
     Hooks.on('createCombat',c=>this._begin(c));
     Hooks.on('updateCombat',(c,changes)=>{ if(c.started) this._begin(c); else if('round' in changes || 'turn' in changes || 'started' in changes || 'active' in changes) this._finish(c); });
     Hooks.on('deleteCombat',c=>this._finish(c));
     Hooks.on('updateActor',(a,changes,options,userId)=>this._update(a,changes,options,userId));
+    Hooks.on('updateActorDelta',delta=>{const a=delta?.parent?.actor; if(a) queueMicrotask(()=>this._update(a,{}, {},null));});
     Hooks.on('updateCombatant',(c,changes)=>{
-      if(c.actor) {this._snapshot.set(c.actor.uuid,health(c.actor));this._registerCombatant(c.parent,c);}
+      if(c.actor) {this._registerCombatant(c.parent,c);}
       if('defeated' in changes && c.actor) this._scheduleDefeat(c.actor,c.parent,Boolean(changes.defeated));
     });
-    Hooks.on('createCombatant',c=>{if(c.actor){this._snapshot.set(c.actor.uuid,health(c.actor));this._registerCombatant(c.parent,c);}});
+    Hooks.on('createCombatant',c=>{if(c.actor){this._registerCombatant(c.parent,c);}});
     Hooks.on('updateToken',(doc,changes,options,userId)=>this._observeToken(doc,changes,options,userId));
     Hooks.on('createChatMessage',msg=>this._noteChatMessage(msg));
     game.socket?.on?.(SOCKET_CHANNEL,(message,senderId)=>this._socketMessage(message,senderId));
@@ -149,20 +191,33 @@ export class CombatTracker {
     for(const token of canvas?.tokens?.placeables ?? []) if(token.actor && !this._snapshot.has(token.actor.uuid)) this._snapshot.set(token.actor.uuid,health(token.actor));
     for(const combat of game.combats ?? []) for(const cb of combat.combatants ?? []) if(cb.actor && !this._snapshot.has(cb.actor.uuid)) this._snapshot.set(cb.actor.uuid,health(cb.actor));
   }
+  _member(combat,actor){
+    return [...(combat?.combatants ?? [])].find(cb=>matchesCombatant(cb,actor)) ?? null;
+  }
+  _pollCombatants(finalizingCombat=null){
+    if(!this._gm() || !game.settings.get(MODULE_ID,'enabled'))return;
+    for(const combat of finalizingCombat ? [finalizingCombat] : (game.combats ?? [])) {
+      if(!combat.started && !finalizingCombat)continue;
+      for(const cb of combat.combatants??[]) {
+        const actor=actorForCombatant(cb);
+        if(actor) this._update(actor,{}, {pf1csPoll:true,pf1csFinal:Boolean(finalizingCombat)},null,combat,cb);
+      }
+    }
+  }
   _isDown(actor,combat=null) {
     const statuses=actor?.statuses;
-    const combatant=[...(combat?.combatants??[])].find(cb=>matchesCombatant(cb,actor));
+    const combatant=this._member(combat,actor);
     return Boolean(combatant?.defeated || ['dead','dying','unconscious','defeated'].some(x=>statuses?.has?.(x)));
   }
   _isDead(actor,combat=null) {
-    const combatant=[...(combat?.combatants??[])].find(cb=>matchesCombatant(cb,actor));
+    const combatant=this._member(combat,actor);
     return Boolean(actor?.statuses?.has?.('dead') || (combatant?.defeated && game.settings.get(MODULE_ID,'defeatedCountsAsKill')));
   }
   _scheduleDefeat(actor,combat,explicit=null) {
     if(!actor || !combat || !this._gm() ||
       ![...(combat.combatants??[])].some(c=>matchesCombatant(c,actor))) return;
     const down = explicit===null ? this._isDown(actor,combat) : explicit;
-    const key=`${combat.id}|${actor.uuid}`;
+    const key=`${combat.id}|${combatantKey(this._member(combat,actor))}`;
     if(!down){
       this._lastDowned.set(key,false);
       clearTimeout(this._defeatTimers.get(key));this._defeatTimers.delete(key);
@@ -173,15 +228,17 @@ export class CombatTracker {
     clearTimeout(this._defeatTimers.get(key));
     this._defeatTimers.set(key,setTimeout(async()=>{
       this._defeatTimers.delete(key);
-      await this._flush(`${combat.id}|${actor.uuid}`);
+      await this._flush(`${combat.id}|${combatantKey(this._member(combat,actor))}`);
       await this._writer.catch(()=>{});
-      const latest=this._recentDamage.get(actor.uuid);
+      const latest=this._recentDamage.get(combatantKey(this._member(combat,actor)));
       const source=latest?.source && latest.combatId===combat.id && now()-latest.ts<15000 ? latest.source : null;
       const defeated=this._isDead(actor,combat) || (explicit===true && game.settings.get(MODULE_ID,'defeatedCountsAsKill'));
       await this.acceptEvent({eventId:uid(),combatId:combat.id,createdAt:new Date().toISOString(),round:combat.round,turn:combat.turn,
         type:'downed',isDeath:defeated,targetActorUuid:actor.uuid,targetActorId:actor.id,targetName:actor.name,
-        targetIsCharacter:characterActor(actor),targetIsToken:Boolean(actor.isToken),
+        targetIsCharacter:characterActor(actor),targetIsToken:Boolean(tokenInfo(actor).tokenId),
+        targetCombatantKey:combatantKey(this._member(combat,actor)),
         sourceActorUuid:source?.uuid??null,sourceActorId:source?.id??null,sourceName:source?.name??null,
+        sourceCombatantKey:latest?.sourceCombatantKey??null,
         attribution:source?'recent-explicit':'unattributed'});
     },DEFEAT_SETTLE_MS));
   }
@@ -189,16 +246,18 @@ export class CombatTracker {
   _transitionDefeated(actor,down,combat){this._scheduleDefeat(actor,combat,down);}
   async _registerCombatant(combat,combatant){
     if(!this._gm() || !this._hasCombat(combat)) return;
-    const actor=combatActor(combatant);if(!actor)return;
+    const actor=actorForCombatant(combatant);if(!actor)return;
+    const key=combatantKey(combatant);
+    if(!this._snapshot.has(`${combat.id}|${key}`)) this._snapshot.set(`${combat.id}|${key}`,health(actor));
     await this._writer.catch(()=>{});
     this._writer=this._writer.catch(()=>{}).then(async()=>{
       const state=clone(game.settings.get(MODULE_ID,SETTING_CURRENT)??{});
       if(state.combatId!==combat.id) return;
       const bucket=characterActor(actor)?'characters':'enemies';
-      const k=actorKey(actor);
+      const k=key;
       state[bucket]??={};
       if(state[bucket][k])return;
-      state[bucket][k]=recordDefault(actor);
+      state[bucket][k]={...recordDefault(actor),name:displayNameForCombatant(combat,combatant,actor),combatantKey:k,tokenId:combatant.tokenId??null};
       await game.settings.set(MODULE_ID,SETTING_CURRENT,state);
     });
     return this._writer;
@@ -248,7 +307,7 @@ export class CombatTracker {
       ? canvas?.scene?.tokens?.get?.(message.speaker.token)?.actor : null)
       ?? game.actors?.get?.(message.speaker?.actor)
       ?? message.actor ?? null;
-    if(!source || ![...combat.combatants].some(c=>matchesCombatant(c,source)))return;
+    if(!source || ![...combat.combatants].some(c=>matchesCombatant(c,source))){this._debug('chat source not in initiative',payload.messageId);return;}
     const listed=Array.isArray(message.system?.targets)?message.system.targets:[];
     const approved=new Set(listed.map(id=>{
       const doc=canvas?.scene?.tokens?.get?.(id)??actorFromUuid(id);return doc?.actor?.uuid;
@@ -257,7 +316,7 @@ export class CombatTracker {
       // When PF1e's chat card lacks explicit targets, a user-selected target
       // is only a candidate. It is counted only if its actual resources fall.
       if(approved.size && !approved.has(uuid))continue;
-      const target=[...combat.combatants].map(combatActor).find(a=>a?.uuid===uuid);
+      const target=[...combat.combatants].map(actorForCombatant).find(a=>a?.uuid===uuid);
       if(!target)continue;
       if(this.queueSource({sourceActor:source,targetActor:target,itemName:message.item?.name??message.system?.item?.name??'Damage card',messageId:message.id}))
         this._debug('queued source',source.name,'->',target.name,message.id);
@@ -280,15 +339,24 @@ export class CombatTracker {
       const record={ combatId:combat.id,fightName:combat.name || `Fight #${hist.length+1}`,startedAt:new Date().toISOString(),characters:{},enemies:{},defeated:[],events:[], processedIds:[] };
       await game.settings.set(MODULE_ID,SETTING_CURRENT,record);
       for (const cb of combat.combatants ?? []) if(cb.actor) {
-        this._snapshot.set(cb.actor.uuid,health(cb.actor));
-        this._lastDowned.set(`${combat.id}|${cb.actor.uuid}`,this._isDown(cb.actor,combat));
+        const memberActor=actorForCombatant(cb);
+        this._snapshot.set(`${combat.id}|${combatantKey(cb)}`,health(memberActor));
+        this._lastDowned.set(`${combat.id}|${combatantKey(cb)}`,this._isDown(memberActor,combat));
         await this._registerCombatant(combat,cb);
       }
     } finally{this._combatInitializing.delete(combat.id);}
   }
   async _finish(combat){
     if(!this._gm()) return;
+    this._pollCombatants(combat);
     for(const key of [...this._pending.keys()]) await this._flush(key);
+    // Finish can occur immediately after the GM marks a token defeated. Do not
+    // discard delayed defeat events when the combat document disappears.
+    for(const cb of combat.combatants??[]) {
+      const actor=actorForCombatant(cb);
+      if(actor && this._isDown(actor,combat)) this._scheduleDefeat(actor,combat,true);
+    }
+    if(this._defeatTimers.size) await new Promise(resolve=>setTimeout(resolve,DEFEAT_SETTLE_MS+35));
     await this._writer.catch(()=>{});
     const current=game.settings.get(MODULE_ID,SETTING_CURRENT)??{};
     if(current.combatId!==combat.id) return;
@@ -308,47 +376,65 @@ export class CombatTracker {
   queueSource({sourceActor,targetActor,itemName='',messageId='',ttl=SOURCE_TTL}={}){
     const src=findActor(sourceActor),tgt=findActor(targetActor);
     if(!src || !tgt || !this._combat(tgt)) return false;
-    const contexts=this._sourceContext.get(tgt.uuid)??[];
+    const contexts=this._sourceContext.get(actorKey(tgt))??[];
     if(messageId && contexts.some(x=>x.messageId===String(messageId) && x.expires>now())) return true;
-    contexts.push({source:participant(src),itemName:String(itemName||''),messageId:String(messageId||''),expires:now()+Math.min(120000,Math.max(1000,ttl))});
-    this._sourceContext.set(tgt.uuid,contexts);
+    contexts.push({source:participant(src),sourceCombatantKey:combatantKey(this._member(this._combat(src),src)),itemName:String(itemName||''),messageId:String(messageId||''),expires:now()+Math.min(120000,Math.max(1000,ttl))});
+    this._sourceContext.set(actorKey(tgt),contexts);
     return true;
   }
   _claimSource(actor){
-    const items=(this._sourceContext.get(actor.uuid)||[]).filter(x=>x.expires>=now());
-    this._sourceContext.set(actor.uuid,items);
+    const items=(this._sourceContext.get(actorKey(actor))||[]).filter(x=>x.expires>=now());
+    this._sourceContext.set(actorKey(actor),items);
     if(items.length!==1) return null; // Ambiguous multiple action sources must not be guessed.
-    this._sourceContext.delete(actor.uuid);
+    this._sourceContext.delete(actorKey(actor));
     return items[0];
   }
-  _update(actor,changes,options,userId){
-    const old=this._snapshot.get(actor.uuid);
+  _update(actor,changes,options,userId,knownCombat=null,knownMember=null){
+    if(!actor || !this._gm() || !game.settings.get(MODULE_ID,'enabled')) return;
+    const combat=knownCombat ?? this._combat(actor);
+    if(!this._hasCombat(combat) && !options?.pf1csFinal) return;
+    const member=knownMember ?? this._member(combat,actor);
+    if(!member) return;
+    const key=`${combat.id}|${combatantKey(member)}`;
     const next=health(actor);
-    this._snapshot.set(actor.uuid,next);
-    if(!old || !this._gm() || !game.settings.get(MODULE_ID,'enabled')) return;
-    const combat = this._combat(actor);
-    if(!this._hasCombat(combat)) return;
-    // NEVER include a scene token unless it is enrolled in this encounter.
-    const member=[...(combat.combatants??[])].find(cb=>matchesCombatant(cb,actor));
-    if(!member)return;
-    void this._registerCombatant(combat,member);
+    const old=this._snapshot.get(key);
+    this._snapshot.set(key,next);
+    if(!old) {void this._registerCombatant(combat,member);return;}
     const delta=resourceDelta(old,next);
-    if(hasChange(delta) && !Object.keys(delta).every(k=>k==='soakRestored'||!delta[k]))
-      this._enqueue(actor,combat,delta,userId,options);
+    if(hasChange(delta)) {
+      this._debug('resource delta',actor.name,actor.uuid,combatantKey(member),delta);
+      if(poolKeys.some(k=>k!=='soakRestored' && delta[k]>0))
+        this._enqueue(actor,combat,member,delta,userId,options);
+    }
     this._scheduleDefeat(actor,combat);
   }
-  _enqueue(actor,combat,delta,userId,options){
-    const key=`${combat.id}|${actor.uuid}`;
+  _inferTurnSource(combat,targetMember){
+    // Explicitly flagged inference only: reactions, traps, and delayed effects
+    // may NOT originate from the current turn. GMs can disable this fallback.
+    const cb=combat?.combatant ?? [...(combat?.combatants??[])][combat.turn??-1];
+    if(!cb || combatantKey(cb)===combatantKey(targetMember)) return null;
+    const actor=actorForCombatant(cb);
+    if(!actor) return null;
+    return {source:participant(actor),sourceCombatantKey:combatantKey(cb),
+      itemName:'Action on initiative turn (inferred)',messageId:'',
+      attribution:'inferred-turn'};
+  }
+  _enqueue(actor,combat,member,delta,userId,options){
+    const key=`${combat.id}|${combatantKey(member)}`;
     let record=this._pending.get(key);
     const changed=new Set(poolKeys.filter(k=>delta[k]));
     // Coalesce the shield + Vigor/Wound writes of one application, but never
     // collapse two successive writes to the SAME health resource into one hit.
     if(record && [...changed].some(k=>record.resources.has(k))){ this._flush(key); record=null; }
     const claimed=this._claimSource(actor);
+    const turnFallback=!claimed && delta.soakDamage+delta.vigorDamage+delta.woundDamage+delta.hpDamage>0 &&
+      game.settings.get(MODULE_ID,'turnAttributionFallback')
+      ? this._inferTurnSource(combat,member) : null;
+    const attributed=claimed??turnFallback;
     if(!record){
-      record={actor,combat,delta:Object.fromEntries(poolKeys.map(k=>[k,0])),resources:new Set(),source:claimed, userId};
+      record={actor,combat,member,delta:Object.fromEntries(poolKeys.map(k=>[k,0])),resources:new Set(),source:attributed, userId};
       this._pending.set(key,record);
-    } else if(!record.source && claimed){ record.source=claimed; }
+    } else if(!record.source && attributed){ record.source=attributed; }
     record.delta=combine(record.delta,delta);
     for(const k of changed) record.resources.add(k);
     clearTimeout(record.timer);
@@ -359,15 +445,16 @@ export class CombatTracker {
     if(!entry) return;
     this._pending.delete(key);
     clearTimeout(entry.timer);
-    const {actor,combat,delta,source}=entry;
+    const {actor,combat,member,delta,source}=entry;
     const damage=delta.soakDamage+delta.vigorDamage+delta.woundDamage+delta.hpDamage;
     const heal=delta.vigorHealing+delta.woundHealing+delta.hpHealing;
     const event={
       eventId:uid(),combatId:combat.id,createdAt:new Date().toISOString(),round:combat.round??0,turn:combat.turn??0,
       type:damage?'damage':'healing',sourceActorUuid:source?.source.uuid??null,sourceActorId:source?.source.id??null,
       sourceName:source?.source.name??null,sourceItemName:source?.itemName??null,sourceMessageId:source?.messageId??null,
+      sourceCombatantKey:source?.sourceCombatantKey??null,targetCombatantKey:combatantKey(member),
       targetActorId:actor.id,targetActorUuid:actor.uuid,targetName:actor.name,
-      targetIsCharacter:characterActor(actor),targetIsToken:Boolean(actor.isToken),attribution:source?'explicit':'unattributed',
+      targetIsCharacter:characterActor(actor),targetIsToken:Boolean(tokenInfo(actor).tokenId),attribution:source?(source.attribution??'explicit'):'unattributed',
       rawAmount:null,mitigatedAmount:null,
       ...delta, effectiveAmount:damage||heal
     };
@@ -389,23 +476,30 @@ export class CombatTracker {
       state.processedIds.push(incoming.eventId);
       state.events=state.events??[];state.events.push(incoming);
       if(state.events.length>15000){state.events.shift();state.processedIds.shift();}
-      const byId=(id,uuid)=>actorFromUuid(uuid)??game.actors?.get?.(id)??[...(canvas?.tokens?.placeables??[])].find(x=>x.actor?.uuid===uuid)?.actor;
       const combat=[...(game.combats??[])].find(c=>c.id===incoming.combatId) ??
         this._combatDocuments.get(incoming.combatId);
-      const target=byId(incoming.targetActorId,incoming.targetActorUuid);
-      const src=byId(incoming.sourceActorId,incoming.sourceActorUuid);
-      if(!combat || !target || ![...combat.combatants].some(cb=>matchesCombatant(cb,target))) return;
-      if(src && ![...combat.combatants].some(cb=>matchesCombatant(cb,src))) return;
-      const ensureRecord=(actor,role,meta={})=>{
+      if(!combat) return;
+      const members=[...(combat.combatants??[])];
+      const resolve=(key,uuid,id)=>members.find(cb=>key && combatantKey(cb)===key) ??
+        members.find(cb=>uuid && actorForCombatant(cb)?.uuid===uuid) ??
+        members.find(cb=>id && !cb.tokenId && cb.actorId===id) ?? null;
+      const targetMember=resolve(incoming.targetCombatantKey,incoming.targetActorUuid,incoming.targetActorId);
+      const sourceMember=resolve(incoming.sourceCombatantKey,incoming.sourceActorUuid,incoming.sourceActorId);
+      if(!targetMember) {this._debug('event target not in initiative',incoming.targetActorUuid);return;}
+      const target=actorForCombatant(targetMember);
+      const src=sourceMember?actorForCombatant(sourceMember):null;
+      const ensureRecord=(actor,cb,meta={})=>{
+        if(!cb)return null;
         const bucket=meta.isCharacter ?? (actor?characterActor(actor):false) ? 'characters':'enemies';
-        const id=meta.isToken ? (meta.uuid??actor?.uuid) : (actor?.isToken?actor.uuid:(actor?.id??meta.id??meta.uuid));
-        if(!id)return null;
+        const id=combatantKey(cb);
         state[bucket]??={};
-        return state[bucket][id]??=actor?recordDefault(actor):recordDefault({id:meta.id??id,uuid:meta.uuid??id,name:meta.name??'Unknown',type:bucket==='characters'?'character':'npc'});
+        return state[bucket][id]??={...recordDefault(actor??{
+          id:meta.id??id,uuid:meta.uuid??id,name:meta.name??'Unknown',type:bucket==='characters'?'character':'npc'
+        }),name:displayNameForCombatant(combat,cb,actor),combatantKey:id,tokenId:cb.tokenId??null};
       };
-      const dest=ensureRecord(target,'target',{id:incoming.targetActorId,uuid:incoming.targetActorUuid,
-        name:incoming.targetName,isCharacter:incoming.targetIsCharacter,isToken:incoming.targetIsToken});
-      const owner=src?ensureRecord(src,'source',{id:incoming.sourceActorId,uuid:incoming.sourceActorUuid,name:incoming.sourceName}):null;
+      const dest=ensureRecord(target,targetMember,{id:incoming.targetActorId,uuid:incoming.targetActorUuid,
+        name:incoming.targetName,isCharacter:incoming.targetIsCharacter});
+      const owner=sourceMember?ensureRecord(src,sourceMember,{id:incoming.sourceActorId,uuid:incoming.sourceActorUuid,name:incoming.sourceName}):null;
       const amountDamage=incoming.soakDamage+incoming.vigorDamage+incoming.woundDamage+incoming.hpDamage;
       const amountHealing=incoming.vigorHealing+incoming.woundHealing+incoming.hpHealing;
       if(dest){
@@ -417,9 +511,9 @@ export class CombatTracker {
       }
       if(incoming.type==='downed' && incoming.isDeath && dest){
         state.defeated??=[];
-        const uuid=incoming.targetActorUuid??incoming.targetActorId;
+        const uuid=incoming.targetCombatantKey??incoming.targetActorUuid??incoming.targetActorId;
         if(!state.defeated.some(x=>x.uuid===uuid)) {
-          state.defeated.push({uuid,name:incoming.targetName??target?.name??'Unknown',killedBy:owner?incoming.sourceActorId:null});
+          state.defeated.push({uuid,name:incoming.targetName??target?.name??'Unknown',killedBy:owner?(incoming.sourceCombatantKey??incoming.sourceActorId):null});
           if(owner)owner.kills++;
         }
       }
@@ -436,7 +530,8 @@ export class CombatTracker {
         if(amountHealing){owner.healingDone+=amountHealing;if(amountHealing>owner.maxSingleHeal){owner.maxSingleHeal=amountHealing;owner.maxSingleHealSource=incoming.sourceItemName||'—';}}
       }
       if(owner && amountDamage && incoming.targetActorUuid)
-        this._recentDamage.set(incoming.targetActorUuid,{source:participant(src),ts:now(),combatId:incoming.combatId});
+        this._recentDamage.set(incoming.targetCombatantKey??incoming.targetActorUuid,{source:participant(src),
+          sourceCombatantKey:incoming.sourceCombatantKey,ts:now(),combatId:incoming.combatId,attribution:incoming.attribution});
       await game.settings.set(MODULE_ID,SETTING_CURRENT,state);
       Hooks.callAll('pf1eCombatStats.eventRecorded',incoming);
       this._debug('recorded',incoming);

@@ -1,4 +1,4 @@
-# PF1e Combat Stats — v1.0.0-rc3 (development / integration-test build)
+# PF1e Combat Stats — v1.0.0-rc4 (development / integration-test build)
 
 A Pathfinder 1e (system **11.11**) adaptation of **Combat Stats v4.0.0**, originally by **Smantella**. Targets **Foundry 13.351**. Active PF1e required; **no D&D5e or Midi-QOL dependency**.
 
@@ -7,10 +7,10 @@ A Pathfinder 1e (system **11.11**) adaptation of **Combat Stats v4.0.0**, origin
 ## How the module works
 
 - Reuses the upstream Combat Stats charts window, combat recap presentation, settings/theme UI, English/Italian localization, historical fight records, and the spreadsheet export layout.
-- Automatically observes **actual** decreases of supported actor resource fields during an active combat, rather than roll messages.
+- Automatically observes **actual** decreases of supported actor resource fields during an active combat, rather than roll messages. In v13 it also polls only initiative combatants every 250 ms as a fallback when synthetic ActorDelta updates do not trigger a usable actor hook.
 - Tracks separate Soak, Vigor, Wounds, and HP fallback damage, and distinguishes automatic **Soak increases** from healing.
 - Uses an active GM as authoritative recorder; does not replace or patch `ActorPF.applyDamage`, libWrapper, PF1e's damage system, Nevela's Automation Suite, or Armor Soak.
-- Creates per-combat statistics and summary when combat is deleted. A Charts tool is added to scene controls.
+- Creates per-combat statistics and summary when combat is deleted. A Charts tool is added to scene controls. Only actors actually enrolled in the initiative tracker appear. Duplicate unlinked NPCs are isolated by their scene token IDs, and duplicate display names gain [1], [2] suffixes.
 - Offers a GM-only **Record verified event** tool and programmable source-attribution API for ambiguous workflows.
 - Charts and `.xlsx` exports function without network/CDN access using small bundled canvas and OOXML writers. The chart renderer replicates the main bar/line/doughnut charts, not the full interactive Chart.js behavior. Excel formatting is basic, with numeric cells and all source rows preserved.
 
@@ -24,8 +24,8 @@ A Pathfinder 1e (system **11.11**) adaptation of **Combat Stats v4.0.0**, origin
 | Easy Target | No direct coupling. Targeting is **not** considered evidence of damage |
 | Armor Soak Pool | Reads `flags.armor-soak-pool.current` and ignores all Soak increases; uses no damage monkey patch |
 | Wounds/Vigor | Default resource paths `system.attributes.vigor.value` and `system.attributes.wounds.value`; verify these in the target world |
-| Attribute attacker automatically | **Not verified**; ambiguous damage counts as damage taken but is NOT credited to a guessed attacker |
-| Confirmed kills/downed | Defeated/downed transition support exists but requires live-world validation; strict linking to recent explicitly attributed damage |
+| Attribute attacker automatically | Chat-card context when verifiable; otherwise optional **initiative-turn fallback**, enabled by default in rc4 and explicitly marked `inferred-turn`. Reactions, traps, and delayed damage can be wrongly inferred. Disable for strictly confirmed attribution. |
+| Confirmed kills/downed | Defeated/downed transition support exists; a kill can be credited to a recently confirmed or *turn-inferred* attacker. Live-world validation is still required. The combat end handler waits for pending defeat transitions. |
 | Multiplayer GM observation | Implemented as active GM `updateActor` hook listener; not runtime-tested |
 | Summon/polymorph attribution | Manual/explicit only; do not enable legacy speculative attribution |
 | Overkill/overheal/excess | Not calculated unless exact verified pre/post amount becomes available; displayed zeros are not proof of absent damage |
@@ -38,7 +38,7 @@ Because the upstream ZIP did not include README/LICENSE, full upstream license r
 ## Install
 
 1. Back up your world.
-2. Install `pf1e-combat-stats/` in Foundry `Data/modules`, or attach `module.json` + the matching ZIP to a GitHub **v1.0.0-rc3** release.
+2. Install `pf1e-combat-stats/` in Foundry `Data/modules`, or attach `module.json` + the matching ZIP to a GitHub **v1.0.0-rc4** release.
 3. Enable the module in a PF1e 11.11 world running Foundry 13.351.
 4. Configure **Vigor resource path**, **Wounds resource path**, and **HP fallback** in module settings after inspecting one PC and one NPC.
 5. Begin a new combat; apply damage as usual. The GM's client must be online and active.
@@ -47,7 +47,7 @@ Because the upstream ZIP did not include README/LICENSE, full upstream license r
 
 ## How to associate an attacker with damage
 
-The tracker never infers responsibility from Easy Target alone. For workflows that don't supply a trustworthy source, use the GM **Record verified event** tool, but be careful: a manual event is **added** to statistics and would duplicate an automatic resource observation if both are used. For an automated event with no source, update the event attribution rather than adding a duplicate; that UI is not yet implemented.
+The tracker never infers responsibility from Easy Target alone. **rc4 enables an initiative-turn fallback** in settings: when a damage event has no explicitly resolved source, the combatant whose turn is current is assigned as `inferred-turn` (not verified). This covers normal attacks and AoE during initiative but can misattribute damage from reactions, traps, ongoing effects, and out-of-turn actions; turn it off if you require strictly confirmed statistics. For workflows that don't supply a trustworthy source, use the GM **Record verified event** tool, but be careful: a manual event is **added** to statistics and would duplicate an automatic resource observation if both are used. For an automated event with no source, update the event attribution rather than adding a duplicate; that UI is not yet implemented.
 
 A macro may explicitly queue trusted source attribution **on the GM client before applying damage**:
 
@@ -75,6 +75,12 @@ game.modules.get('pf1e-combat-stats')?.api.openManualDialog();
 ```
 
 The dialog records statistics, **not** actor damage. It must not be used to double-count damage already observed.
+
+## rc4 regression test (offline, not a world integration test)
+
+Replays the observed encounter with Daleira and Tangra against two Bloodling synthetic tokens sharing the same base Actor ID. Expected: Daleira 57 dealt / 61 taken / 1 kill, Tangra 84 dealt; Bloodling [1] takes 127 HP and deals 28, Bloodling [2] takes 14 HP and deals 33. Checks immediate end-of-combat defeat processing, initiative-only enrollment, and synthetic token polling without an updateActor hook.
+
+**Important:** Turn-based credits are probabilistic attribution and should be reviewed in unexpected damage workflows. The GM console shows `PF1e Combat Stats | resource delta` with debug logging enabled.
 
 ## Tests to complete in Foundry before calling it stable
 
@@ -108,7 +114,7 @@ The dialog records statistics, **not** actor damage. It must not be used to doub
 
 Based on Combat Stats v4.0.0 by **Smantella**; redistributed with changes under **CC BY-SA 4.0**. See `ATTRIBUTION.md` and `LICENSE` and https://github.com/Smantella/combat-stats . All other combat modules remain independently owned; their source code was not copied.
 
-## v1.0.0-rc3 tracking fixes
+## v1.0.0-rc4 tracking fixes
 
 Combat participants are now registered as soon as they join an active combat, whether or not they have taken damage. Scene-token enemies damaged during a combat can be recorded even if omitted from initiative. Unlinked token actors are matched by their unique token-backed UUIDs.
 
