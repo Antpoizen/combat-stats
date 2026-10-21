@@ -1,4 +1,4 @@
-# PF1e Combat Stats — v1.0.0-rc1 (development / integration-test build)
+# PF1e Combat Stats — v1.0.0-rc2 (development / integration-test build)
 
 A Pathfinder 1e (system **11.11**) adaptation of **Combat Stats v4.0.0**, originally by **Smantella**. Targets **Foundry 13.351**. Active PF1e required; **no D&D5e or Midi-QOL dependency**.
 
@@ -38,7 +38,7 @@ Because the upstream ZIP did not include README/LICENSE, full upstream license r
 ## Install
 
 1. Back up your world.
-2. Install `pf1e-combat-stats/` in Foundry `Data/modules`, or attach `module.json` + the matching ZIP to a GitHub **v1.0.0-rc1** release.
+2. Install `pf1e-combat-stats/` in Foundry `Data/modules`, or attach `module.json` + the matching ZIP to a GitHub **v1.0.0-rc2** release.
 3. Enable the module in a PF1e 11.11 world running Foundry 13.351.
 4. Configure **Vigor resource path**, **Wounds resource path**, and **HP fallback** in module settings after inspecting one PC and one NPC.
 5. Begin a new combat; apply damage as usual. The GM's client must be online and active.
@@ -107,3 +107,13 @@ The dialog records statistics, **not** actor damage. It must not be used to doub
 ## Credits and license
 
 Based on Combat Stats v4.0.0 by **Smantella**; redistributed with changes under **CC BY-SA 4.0**. See `ATTRIBUTION.md` and `LICENSE` and https://github.com/Smantella/combat-stats . All other combat modules remain independently owned; their source code was not copied.
+
+## v1.0.0-rc2 tracking fixes
+
+Combat participants are now registered as soon as they join an active combat, whether or not they have taken damage. Scene-token enemies damaged during a combat can be recorded even if omitted from initiative. Unlinked token actors are matched by their unique token-backed UUIDs.
+
+Kills/downed transitions now have their own event path; the previous kill-credit code incorrectly required a damage or healing amount on a `downed` event, which was impossible. A combatant marked **Defeated** is considered a kill only when **Count defeated combatants as kills** is enabled (default on), or their `dead` condition is present. The NPC is included in the defeated list even if no attacker can be identified. Repeated updates do not create multiple kills.
+
+**Automatic attack-source linking is conservative.** When someone clicks a Foundry PF1e chat card's Apply Damage button and the originating chat message explicitly lists target token IDs, the module associates that confirmed source speaker with ensuing *applied* changes to those target actors. Player clicks send the application context to the authoritative GM via Foundry socket, with server-side verification of the message and targets. This does **not** cover every Nevela/PF1e workflow, and does not guess from user target selections or chat rolls. For workflows that supply no explicit target-bearing chat card, use the verified `queueSource` API/macro or manually annotate damage in the GM interface. Do not count an observed change again as a separate manual damage event.
+
+**Required live tests:** two different PCs damaging two separate enemies; an enemy outside initiative damaged on scene; an NPC with zero HP marked Defeated; player-client Apply Damage click; Soak refills; unlinked token actors; manual Wounds/Vigor healing; one downed creature that is later healed and downed again. Observe the Debug setting for why source attribution may be absent.

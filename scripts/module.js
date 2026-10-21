@@ -38,6 +38,8 @@ Hooks.once('init',()=>{
   add('vigorPath','system.attributes.vigor.value','world',true,{name:'Vigor resource path'});
   add('woundsPath','system.attributes.wounds.value','world',true,{name:'Wounds resource path'});
   add('hpPath','system.attributes.hp.value','world',true,{name:'HP fallback path'});
+  add('chatCardAttribution',true,'world',true,{name:'Attribute damage from explicit PF1e chat-card Apply actions',hint:'Only when a chat card identifies its actor and the affected token documents. Does not infer damage from targeting alone.'});
+  add('defeatedCountsAsKill',true,'world',true,{name:'Count defeated combatants as kills',hint:'Credit a kill to the most recent explicitly attributed attacker. Disable if Defeated means unconscious rather than killed in your campaign.'});
   add('debug',false,'world',true,{name:'Diagnostic logging'});
   game.settings.registerMenu(MODULE_ID,'trackedStatsMenu',{name:'Tracked statistics',label:'Configure',icon:'fa-solid fa-list-check',type:TrackedStatsDialog,restricted:true});
   game.settings.registerMenu(MODULE_ID,'themeMenu',{name:'Theme & Data',label:'Configure',icon:'fa-solid fa-palette',type:CombatStatsSettings,restricted:true});
@@ -64,9 +66,10 @@ export function applyTheme(){if(!globalThis.document) return;const root=document
 export async function openManualEventDialog(){
   if(!game.user?.isGM){ui.notifications.warn(game.i18n.localize('PF1CS.Warning.GmOnly'));return;}
   if(!game.combat?.started){ui.notifications.warn(game.i18n.localize('PF1CS.Warning.NoCombat'));return;}
-  const actors=[...game.actors].filter(a=>a.type==='character'||a.type==='npc');
+  const roster=[...(game.combat?.combatants??[])].map(c=>c.actor).filter(Boolean);
+  const actors=[...new Map([...roster,...game.actors].filter(a=>a && (a.type==='character'||a.type==='npc')).map(a=>[a.uuid,a])).values()];
   const esc=v=>foundry.utils.escapeHTML(String(v??''));
-  const opts=(empty=false)=>`${empty?'<option value="">— Unattributed —</option>':''}${actors.map(a=>`<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('')}`;
+  const opts=(empty=false)=>`${empty?'<option value="">— Unattributed —</option>':''}${actors.map(a=>`<option value="${esc(a.uuid)}">${esc(a.name)}</option>`).join('')}`;
   const content=`<div class="pf1e-combat-stats"><div class="form-group"><label>Source actor</label><select name="source">${opts(true)}</select></div><div class="form-group"><label>Target</label><select name="target">${opts()}</select></div><div class="form-group"><label>Event</label><select name="kind"><option value="damage">Damage</option><option value="healing">Healing</option></select></div><div class="form-group"><label>Resource</label><select name="resource"><option value="soak">Soak</option><option value="vigor" selected>Vigor</option><option value="wounds">Wounds</option><option value="hp">HP</option></select></div><div class="form-group"><label>Amount</label><input name="amount" type="number" min="1" step="1" value="1"/></div><div class="form-group"><label>Item/ability</label><input name="itemName" type="text" value="Manual attribution" /></div><p>This records a statistics event only. It never applies damage or healing to an actor.</p></div>`;
   const Dialog=foundry.applications.api.DialogV2;
   await Dialog.wait({window:{title:'PF1e Combat Stats — Record Verified Event'},content,buttons:[{action:'record',label:'Record event',default:true,callback:(event,button,dialog)=>{
