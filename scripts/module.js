@@ -49,7 +49,7 @@ Hooks.once('ready',()=>{
   applyTheme();
   if(game.system.id!=='pf1'){ui.notifications.error('PF1e Combat Stats requires PF1e.');return;}
   const t=new CombatTracker();game.pf1eCombatStats=t;
-  game.modules.get(MODULE_ID).api={tracker:t,openCharts:()=>new ChartsApp().render(true),queueSource:options=>t.queueSource(options),recordEvent:ev=>t.acceptEvent(ev),recordManual:opts=>t.manualEvent(opts),getHistory:()=>game.settings.get(MODULE_ID,SETTING_HISTORY),getDiagnostics:()=>t.diagnostics(),getRoster:()=>t.diagnostics(),openManualDialog:openManualEventDialog};
+  game.modules.get(MODULE_ID).api={tracker:t,openCharts:()=>new ChartsApp().render(true),queueSource:options=>t.queueSource(options),recordEvent:ev=>t.acceptEvent(ev),recordManual:opts=>t.manualEvent(opts),getHistory:()=>game.settings.get(MODULE_ID,SETTING_HISTORY),getDiagnostics:()=>t.diagnostics(),getRoster:()=>t.diagnostics(),getDebugReport:()=>t.getDebugReport(),openManualDialog:openManualEventDialog};
   t.init();
   if(game.user.isGM && !game.modules.get('nevelas-automation-suite')?.active) console.info(`${MODULE_ID}: Nevela is inactive. Raw PF1e health changes can still be observed.`);
 });
@@ -67,10 +67,11 @@ export function applyTheme(){if(!globalThis.document) return;const root=document
 export async function openManualEventDialog(){
   if(!game.user?.isGM){ui.notifications.warn(game.i18n.localize('PF1CS.Warning.GmOnly'));return;}
   if(!game.combat?.started){ui.notifications.warn(game.i18n.localize('PF1CS.Warning.NoCombat'));return;}
-  const roster=[...(game.combat?.combatants??[])].map(c=>c.actor).filter(Boolean);
-  const actors=[...new Map(roster.filter(a=>a && (a.type==='character'||a.type==='npc')).map(a=>[a.uuid,a])).values()];
+  // Use full combatant UUIDs; c.actor alone may resolve the SHARED world
+  // actor for multiple unlinked NPC tokens.
+  const actors=game.pf1eCombatStats?.diagnostics?.()??[];
   const esc=v=>foundry.utils.escapeHTML(String(v??''));
-  const opts=(empty=false)=>`${empty?'<option value="">— Unattributed —</option>':''}${actors.map(a=>`<option value="${esc(a.uuid)}">${esc(a.name)}</option>`).join('')}`;
+  const opts=(empty=false)=>`${empty?'<option value="">— Unattributed —</option>':''}${actors.map(a=>`<option value="${esc(a.actorUuid)}">${esc(a.name)}</option>`).join('')}`;
   const content=`<div class="pf1e-combat-stats"><div class="form-group"><label>Source actor</label><select name="source">${opts(true)}</select></div><div class="form-group"><label>Target</label><select name="target">${opts()}</select></div><div class="form-group"><label>Event</label><select name="kind"><option value="damage">Damage</option><option value="healing">Healing</option></select></div><div class="form-group"><label>Resource</label><select name="resource"><option value="soak">Soak</option><option value="vigor" selected>Vigor</option><option value="wounds">Wounds</option><option value="hp">HP</option></select></div><div class="form-group"><label>Amount</label><input name="amount" type="number" min="1" step="1" value="1"/></div><div class="form-group"><label>Item/ability</label><input name="itemName" type="text" value="Manual attribution" /></div><p>This records a statistics event only. It never applies damage or healing to an actor.</p></div>`;
   const Dialog=foundry.applications.api.DialogV2;
   await Dialog.wait({window:{title:'PF1e Combat Stats — Record Verified Event'},content,buttons:[{action:'record',label:'Record event',default:true,callback:(event,button,dialog)=>{

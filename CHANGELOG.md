@@ -76,3 +76,12 @@
 - Bundled local chart renderer and offline XLSX writer for simple spreadsheet output.
 - Included attribution and testing documentation.
 - This is a development candidate requiring world integration tests, not a verified production port.
+
+## 1.0.14 — PF1e-native tracker & dashboard rebuild (experimental)
+
+- Replace the inherited tracking state machine with an initiative-authoritative, Combatant-ID-keyed in-memory encounter ledger.
+- Register all initiative participants immediately, including zero-stat characters and duplicate unlinked NPC tokens.
+- Capture true post-application HP / Wounds / Vigor / Soak changes via Foundry v13 ActorDelta, Token, Actor and polling paths.
+- Repair damage dealt, single-hit and defeated kill attribution with an explicit socket intent and a labeled turn fallback.
+- Replace Charts with a local PF1e dashboard using a bundled offline canvas graph renderer.
+- Keep history/export compatibility and add an API diagnostic report and full hook-driven test.

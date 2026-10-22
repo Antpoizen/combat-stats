@@ -1,0 +1,55 @@
+<section class="pf1cs-dashboard">
+  <header class="pf1cs-top">
+    <nav class="pf1cs-tabs">
+      <button type="button" data-tab="totals" class="{{#if tabTotals}}selected{{/if}}"><i class="fa-solid fa-users"></i> Players</button>
+      <button type="button" data-tab="enemies" class="{{#if tabEnemies}}selected{{/if}}"><i class="fa-solid fa-skull"></i> Enemies</button>
+      <button type="button" data-tab="chart" class="{{#if tabChart}}selected{{/if}}"><i class="fa-solid fa-chart-bar"></i> Chart</button>
+      <button type="button" data-tab="meter" class="{{#if tabMeter}}selected{{/if}}"><i class="fa-solid fa-bolt"></i> Damage Meter</button>
+      <button type="button" data-tab="fight" class="{{#if tabFight}}selected{{/if}}"><i class="fa-solid fa-swords"></i> Fight Details</button>
+    </nav>
+    <div class="pf1cs-actions">
+      <button type="button" data-action="refresh" title="Refresh from current combat"><i class="fa-solid fa-rotate"></i> Refresh</button>
+      <button type="button" data-action="export"><i class="fa-solid fa-file-excel"></i> Export</button>
+    </div>
+  </header>
+  <div class="pf1cs-fights">
+    {{#each fights}}<button type="button" data-fight="{{id}}" class="{{#if selected}}selected{{/if}}">{{name}}</button>{{/each}}
+  </div>
+  {{#unless hasFights}}<p class="pf1cs-empty">No encounters recorded. Roll initiative to register every participant, including combatants with zero damage.</p>{{/unless}}
+  {{#if tabTotals}}
+    <h2>Friendly combatants</h2>
+    <div class="pf1cs-table-wrap"><table><thead><tr><th>Character</th><th>Dealt</th><th>Taken</th><th>Soak dealt</th><th>Healed</th><th>Kills</th><th>Overkill</th><th>Max single hit</th><th>Times downed</th></tr></thead>
+    <tbody>{{#each chars}}<tr><td>{{name}}</td><td>{{damageDealt}}</td><td>{{damageTaken}}</td><td>{{soakDealt}}</td><td>{{healingDone}}</td><td>{{kills}}</td><td>{{overdamage}}</td><td>{{maxSingleHit}}</td><td>{{timesDowned}}</td></tr>{{/each}}</tbody>
+    <tfoot><tr><td>Total</td><td>{{partyTotal.damageDealt}}</td><td>{{partyTotal.damageTaken}}</td><td></td><td></td><td>{{partyTotal.kills}}</td><td></td><td>{{partyTotal.maxSingleHit}}</td><td></td></tr></tfoot></table></div>
+  {{/if}}
+  {{#if tabEnemies}}
+    <h2>Hostile combatants</h2>
+    <div class="pf1cs-table-wrap"><table><thead><tr><th>Enemy</th><th>Dealt</th><th>Taken</th><th>Soak taken</th><th>Healed</th><th>Kills</th><th>Overkill</th><th>Max single hit</th><th>Times downed</th></tr></thead>
+    <tbody>{{#each enemies}}<tr><td>{{name}}</td><td>{{damageDealt}}</td><td>{{damageTaken}}</td><td>{{soakTaken}}</td><td>{{healingDone}}</td><td>{{kills}}</td><td>{{overdamage}}</td><td>{{maxSingleHit}}</td><td>{{timesDowned}}</td></tr>{{/each}}</tbody>
+    <tfoot><tr><td>Total</td><td>{{enemyTotal.damageDealt}}</td><td>{{enemyTotal.damageTaken}}</td><td></td><td></td><td>{{enemyTotal.kills}}</td><td></td><td>{{enemyTotal.maxSingleHit}}</td><td></td></tr></tfoot></table></div>
+  {{/if}}
+  {{#if tabChart}}
+    <h2>Damage &amp; statistics — {{selectedName}}</h2>
+    <div class="pf1cs-modes"><button type="button" data-metric="damageDealt" class="{{#if metricDealt}}selected{{/if}}">Damage dealt</button><button type="button" data-metric="damageTaken" class="{{#if metricTaken}}selected{{/if}}">Damage taken</button><button type="button" data-metric="kills" class="{{#if metricKills}}selected{{/if}}">Kills</button><button type="button" data-metric="maxSingleHit" class="{{#if metricMax}}selected{{/if}}">Max hit</button></div>
+    <div class="pf1cs-graph"><canvas id="pf1cs-chart" width="1000" height="380"></canvas></div>
+  {{/if}}
+  {{#if tabMeter}}
+    <h2>Damage meter — {{selectedName}}</h2>
+    <p class="pf1cs-subtitle">Observed applied damage, including Soak when enabled. Unattributed damage is not assigned to an attacker.</p>
+    <div class="pf1cs-table-wrap"><table><thead><tr><th>Participant</th><th>Side</th><th>Damage dealt</th><th>Damage taken</th><th>Max hit</th><th>Kills</th></tr></thead><tbody>
+      {{#each party}}<tr><td>{{name}}</td><td>Friendly</td><td>{{damageDealt}}</td><td>{{damageTaken}}</td><td>{{maxSingleHit}}</td><td>{{kills}}</td></tr>{{/each}}
+      {{#each hostiles}}<tr><td>{{name}}</td><td>Hostile</td><td>{{damageDealt}}</td><td>{{damageTaken}}</td><td>{{maxSingleHit}}</td><td>{{kills}}</td></tr>{{/each}}
+    </tbody></table></div>
+  {{/if}}
+  {{#if tabFight}}
+    <h2>{{selectedName}} <small>{{activeLabel}}</small></h2>
+    <h3>Friendly</h3>
+    <div class="pf1cs-table-wrap"><table><thead><tr><th>Participant</th><th>Dealt</th><th>Taken</th><th>Kills</th><th>Max hit</th></tr></thead><tbody>
+      {{#each party}}<tr><td>{{name}}</td><td>{{damageDealt}}</td><td>{{damageTaken}}</td><td>{{kills}}</td><td>{{maxSingleHit}}</td></tr>{{/each}}
+    </tbody><tfoot><tr><td>Total</td><td>{{partyFightTotal.damageDealt}}</td><td>{{partyFightTotal.damageTaken}}</td><td>{{partyFightTotal.kills}}</td><td>{{partyFightTotal.maxSingleHit}}</td></tr></tfoot></table></div>
+    <h3>Hostile</h3>
+    <div class="pf1cs-table-wrap"><table><thead><tr><th>Participant</th><th>Dealt</th><th>Taken</th><th>Kills</th><th>Max hit</th></tr></thead><tbody>
+      {{#each hostiles}}<tr><td>{{name}}</td><td>{{damageDealt}}</td><td>{{damageTaken}}</td><td>{{kills}}</td><td>{{maxSingleHit}}</td></tr>{{/each}}
+    </tbody><tfoot><tr><td>Total</td><td>{{enemyFightTotal.damageDealt}}</td><td>{{enemyFightTotal.damageTaken}}</td><td>{{enemyFightTotal.kills}}</td><td>{{enemyFightTotal.maxSingleHit}}</td></tr></tfoot></table></div>
+  {{/if}}
+</section>
