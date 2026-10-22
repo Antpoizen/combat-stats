@@ -49,7 +49,7 @@ Hooks.once('ready',()=>{
   applyTheme();
   if(game.system.id!=='pf1'){ui.notifications.error('PF1e Combat Stats requires PF1e.');return;}
   const t=new CombatTracker();game.pf1eCombatStats=t;
-  game.modules.get(MODULE_ID).api={tracker:t,openCharts:()=>new ChartsApp().render(true),queueSource:options=>t.queueSource(options),recordEvent:ev=>t.acceptEvent(ev),recordManual:opts=>t.manualEvent(opts),getHistory:()=>game.settings.get(MODULE_ID,SETTING_HISTORY),getDiagnostics:()=>t.diagnostics(),openManualDialog:openManualEventDialog};
+  game.modules.get(MODULE_ID).api={tracker:t,openCharts:()=>new ChartsApp().render(true),queueSource:options=>t.queueSource(options),recordEvent:ev=>t.acceptEvent(ev),recordManual:opts=>t.manualEvent(opts),getHistory:()=>game.settings.get(MODULE_ID,SETTING_HISTORY),getDiagnostics:()=>t.diagnostics(),getRoster:()=>t.diagnostics(),openManualDialog:openManualEventDialog};
   t.init();
   if(game.user.isGM && !game.modules.get('nevelas-automation-suite')?.active) console.info(`${MODULE_ID}: Nevela is inactive. Raw PF1e health changes can still be observed.`);
 });

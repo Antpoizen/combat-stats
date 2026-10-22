@@ -1,3 +1,14 @@
+# v1.0.11
+
+- Unified attacker/recipient identity around full Actor UUIDs, resolving initiative membership via Combatant IDs.
+- Resolve live token document actors before stale combatant actors and handle v13 ActorDelta absolute overrides.
+- Apply post-update resource fields directly even when synthetic actors lag behind.
+- Register every initiative member even when damage and healing are zero.
+- Track maximum single hit per verified/inferred applied damage transaction.
+- Credit kills when defeated status follows a recently attributed hit; otherwise leave killer unattributed.
+- Only calculate overkill when remaining HP/Wounds are verifiably negative; never infer from clamped bars.
+- Expose getDiagnostics() and getRoster() for troubleshooting.
+
 # v1.0.0-rc5
 
 - Fix synthetic unlinked token identity using Combatant ID rather than base Actor ID.

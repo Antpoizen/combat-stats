@@ -158,3 +158,20 @@ console.table(game.modules.get('pf1e-combat-stats').api.getDiagnostics());
 Compare `trackedSnapshot` with `currentHealth` and `matched` for each initiative combatant. If unlinked NPCs still fail to count HP damage, capture the table immediately after a hit and provide it with the console log.
 
 **Attribution warning:** the setting `turnAttributionFallback` infers attacker from whose initiative turn it is when a verified actor source is unavailable. It can misattribute reactions, delayed effects and ready actions. The module does not currently calculate overkill correctly for Wounds/Vigor and cannot automatically recover events from earlier builds.
+
+
+## v1.0.11 — Actor UUID combatant attribution
+
+This version uses the **full Actor UUID** to correlate applied resource changes and source actions, with a stable **Combatant ID** to ensure only initiative participants appear in the fight report. For unlinked tokens the full UUID includes the scene and token identity. All combatants get zero-valued report rows even if they do not attack.
+
+**Testing:** `console.table(game.modules.get('pf1e-combat-stats').api.getDiagnostics())` shows the Actor UUID, token UUID, Combatant ID, snapshot, and ActorDelta-aware health values for every initiative member. If the API is not present, the installed script is not this v1.0.11 build.
+
+**Damage dealt:** When no explicit chat/automation source is available, the optional current-turn attribution setting (enabled by default) provides an *inferred* attacker; reactions and delayed effects can be miscredited. Damage taken still comes from actual resource changes.
+
+**Kills:** A defeated marker credits the most recent attributed hit within 15 seconds. If no matching damaging event exists, the defeat is recorded with no killer.
+
+**Max single hit:** Highest post-mitigation damage event, grouped across Soak/Vigor/Wounds where possible.
+
+**Overkill:** Only recorded if the observed HP or Wounds resource falls below zero. When PF1e clamps values at zero, excess damage cannot be recovered from resource deltas alone; do not interpret zero as reliable overkill.
+
+**Version continuity:** This was rebuilt from the provided rc5 source. If your deployed v1.0.10 had divergent local edits, reconcile those before overwriting it. Back up your world and test with Foundry 13.351 and PF1e 11.11.

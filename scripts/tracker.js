@@ -82,10 +82,27 @@ function tokenInfo(actor) {
     sceneId: match?.[1] ?? actor?.token?.parent?.id ?? null };
 }
 function actorKey(actor) {
-  const t=tokenInfo(actor);
-  return t.tokenId ? `${t.sceneId ?? 'scene'}:Token:${t.tokenId}` : (actor?.id ?? actor?.uuid);
+  // Full UUID is canonical for the damage/healing event source and recipient.
+  return fullActorUuid(actor) ?? `${tokenInfo(actor).sceneId}:${tokenInfo(actor).tokenId}` ?? actor?.id;
 }
 function combatActor(combatant) { return combatant?.actor ?? combatant?.token?.actor ?? null; }
+function fullActorUuid(actor) { return typeof actor?.uuid === 'string' ? actor.uuid : null; }
+function tokenUuidForCombatant(cb) {
+  return cb?.token?.uuid ?? (cb?.sceneId && cb?.tokenId ? `Scene.${cb.sceneId}.Token.${cb.tokenId}` : null);
+}
+function actorUuidForCombatant(cb) {
+  return fullActorUuid(actorForCombatant(cb)) ?? fullActorUuid(cb?.actor) ?? null;
+}
+function poolFromTokenDelta(cb, actor) {
+  // ActorDelta stores the token actor's ABSOLUTE overrides in Foundry v13.
+  // Do not assume the synthetic actor has been rebuilt before hooks fire.
+  const delta=cb?.token?.delta ?? cb?.token?.actorDelta ?? null;
+  if(!delta) return health(actor);
+  const baseline=health(actor);
+  const raw=delta._source ?? delta;
+  const overrides=healthPatch(raw);
+  return {...baseline,...overrides};
+}
 // Foundry v13 gives every initiative Combatant its own stable document ID.
 // Use this over a shared base actor ID or potentially missing token metadata.
 // A combatant with no token is still a legitimate participant.
@@ -97,26 +114,31 @@ function combatantKey(cb) {
 }
 function matchesCombatant(cb,actor) {
   if(!cb || !actor) return false;
+  // A full synthetic Actor UUID is unique even when multiple unlinked tokens
+  // share one base Actor ID. Match that before any weaker form of identity.
+  const uuid=fullActorUuid(actor);
+  const memberUuid=actorUuidForCombatant(cb);
+  if(uuid && memberUuid && uuid===memberUuid) return true;
   const token=tokenInfo(actor);
   const cbTokenId=cb.tokenId ?? cb.token?.id ?? null;
   if(token.tokenId) return Boolean(cbTokenId && cbTokenId===token.tokenId &&
     (!token.sceneId || !cb.sceneId || cb.sceneId===token.sceneId));
-  // Never match a base world Actor with an unlinked Token actor just because
-  // they share the same base Actor ID.
+  // A world Actor reference may belong to a linked combatant. NEVER identify
+  // an unlinked-token instance by the world's base Actor ID alone.
+  if(cbTokenId && cb?.token?.actorLink===false) return false;
   if(cbTokenId && cb?.token?.actor && cb.token.actor.uuid!==actor.uuid) return false;
-  return Boolean((cb?.actor?.uuid && cb.actor.uuid===actor.uuid) ||
+  return Boolean((cb?.actor?.uuid && cb.actor.uuid===uuid) ||
     (cb.actorId && cb.actorId===actor.id && !cbTokenId));
 }
 function actorForCombatant(cb) {
-  // cb.token is the authoritative token document even if the GM has changed
-  // scenes. Synthetic actors are rebuilt as their ActorDelta changes.
-  if(cb?.token?.actor) return cb.token.actor;
+  // Resolve from the live scene document first; combatant.token may be a stale
+  // proxy to a synthetic Actor that was replaced by the ActorDelta update.
   if(cb?.tokenId && canvas?.scene &&
      (!cb.sceneId || cb.sceneId===canvas.scene.id)) {
     const doc=canvas.scene.tokens?.get?.(cb.tokenId);
     if(doc?.actor) return doc.actor;
   }
-  return combatActor(cb);
+  return cb?.token?.actor ?? combatActor(cb);
 }
 function displayNameForCombatant(combat,cb,actor) {
   const name=String(cb?.name || actor?.name || 'Unknown');
@@ -163,10 +185,10 @@ export class CombatTracker {
       const actor=actorForCombatant(cb);
       const key=`${combat.id}|${combatantKey(cb)}`;
       return {combatantId:cb.id,tokenId:cb.tokenId,sceneId:cb.sceneId,
-        name:cb.name,actorUuid:actor?.uuid,actorName:actor?.name,
+        name:cb.name,actorUuid:actorUuidForCombatant(cb),tokenUuid:tokenUuidForCombatant(cb),actorName:actor?.name,
         matched:actor?matchesCombatant(cb,actor):false,
         trackedSnapshot:this._snapshot.get(key)??null,
-        currentHealth:actor?health(actor):null,
+        currentHealth:actor?health(actor):null,mergedActorDeltaHealth:actor?poolFromTokenDelta(cb,actor):null,
         isDefeated:cb.defeated,deltaSource:cb.token?.delta?.uuid};
     });
   }
@@ -182,7 +204,13 @@ export class CombatTracker {
   }
   // Ensure current is associated with an actual combat. Prevents default
   // blank-setting recording when a scene is open but no combat is running.
-  _hasCombat(combat){ return Boolean(combat && combat.id && combat.started); }
+  _hasCombat(combat){
+    // Register the complete encounter as soon as initiative exists, even if
+    // the GM hasn't clicked Begin Combat. Damage events are only collected
+    // after combat has actually started (see _update).
+    return Boolean(combat && combat.id && (combat.started ||
+      [...(combat.combatants??[])].some(cb=>cb.initiative!==null&&cb.initiative!==undefined)));
+  }
   init(){
     this._startup=true;
     this.refreshSnapshots();
@@ -190,10 +218,14 @@ export class CombatTracker {
     // updateActor can miss or expose stale synthetic ActorDelta state in some
     // module workflows. Poll *initiative members only* as an independent backup.
     this._pollTimer=setInterval(()=>this._pollCombatants(),ROSTER_POLL_MS);
-    Hooks.on('createCombat',c=>this._begin(c));
-    Hooks.on('updateCombat',(c,changes)=>{ if(c.started) this._begin(c); else if('round' in changes || 'turn' in changes || 'started' in changes || 'active' in changes) this._finish(c); });
+    Hooks.on('createCombat',c=>{if(this._hasCombat(c))void this._begin(c);});
+    Hooks.on('updateCombat',(c,changes)=>{
+      if(c.started || this._hasCombat(c)) void this._begin(c);
+      if(changes.started === false) void this._finish(c);
+    });
     Hooks.on('deleteCombat',c=>this._finish(c));
-    Hooks.on('updateActor',(a,changes,options,userId)=>this._update(a,changes,options,userId));
+    Hooks.on('updateActor',(a,changes,options,userId)=>
+      this._update(a,changes,options,userId,null,null,healthPatch(changes)));
     // Synthetic token actor updates are ActorDelta updates in v13. Observe
     // the token's CURRENT actor after the delta has reconstructed it, and
     // independently process explicit resource values supplied in the update.
@@ -201,10 +233,11 @@ export class CombatTracker {
       this._observeActorDelta(delta,changed,options,userId);
     });
     Hooks.on('updateCombatant',(c,changes)=>{
+      if(this._hasCombat(c.parent) && !this._combatInitializing.has(c.parent.id)) void this._begin(c.parent);
       this._registerCombatant(c.parent,c);
-      if('defeated' in changes && actorForCombatant(c)) this._scheduleDefeat(actorForCombatant(c),c.parent,Boolean(changes.defeated));
+      if('defeated' in changes && actorForCombatant(c)) this._scheduleDefeat(actorForCombatant(c),c.parent,Boolean(changes.defeated),c);
     });
-    Hooks.on('createCombatant',c=>this._registerCombatant(c.parent,c));
+    Hooks.on('createCombatant',c=>{if(this._hasCombat(c.parent)) void this._begin(c.parent);this._registerCombatant(c.parent,c);});
     Hooks.on('updateToken',(doc,changes,options,userId)=>this._observeToken(doc,changes,options,userId));
     Hooks.on('createChatMessage',msg=>this._noteChatMessage(msg));
     game.socket?.on?.(SOCKET_CHANNEL,(message,senderId)=>this._socketMessage(message,senderId));
@@ -213,7 +246,7 @@ export class CombatTracker {
     Hooks.on('deleteActor',a=>this._snapshot.delete(a.uuid));
     Hooks.on('createToken',doc=>{if(doc.actor) this._snapshot.set(doc.actor.uuid,health(doc.actor));});
     this._startup=false;
-    for (const c of game.combats ?? []) if(c.started && this._gm()) this._begin(c);
+    for (const c of game.combats ?? []) if(this._hasCombat(c) && this._gm()) void this._begin(c);
   }
   _observeActorDelta(delta,changes={},options={},userId=null) {
     const doc=delta?.parent;
@@ -226,6 +259,7 @@ export class CombatTracker {
     // The delta may contain updates to a new synthetic actor that is not yet
     // reflected by a cached combatant actor. Query again after core finishes.
     const patch=healthPatch(changes);
+    if(!Object.keys(patch).length) Object.assign(patch,healthPatch(doc.delta?._source ?? doc.delta ?? {}));
     // Trust explicitly changed resource fields even if core has not yet
     // rebuilt token.actor. The later poll sees the same value and deduplicates.
     if(Object.keys(patch).length) this._update(doc.actor,{},options,userId,combat,member,patch);
@@ -256,10 +290,12 @@ export class CombatTracker {
   refreshSnapshots(){
     for(const actor of game.actors ?? []) {if(!this._snapshot.has(actor.uuid)) this._snapshot.set(actor.uuid,health(actor));this._lastDowned.set(actor.uuid,this._isDown(actor));}
     for(const token of canvas?.tokens?.placeables ?? []) if(token.actor && !this._snapshot.has(token.actor.uuid)) this._snapshot.set(token.actor.uuid,health(token.actor));
-    for(const combat of game.combats ?? []) for(const cb of combat.combatants ?? []) {const a=actorForCombatant(cb);if(a && !this._snapshot.has(`${combat.id}|${combatantKey(cb)}`)) this._snapshot.set(`${combat.id}|${combatantKey(cb)}`,health(a));}
+    for(const combat of game.combats ?? []) for(const cb of combat.combatants ?? []) {const a=actorForCombatant(cb);if(a && !this._snapshot.has(`${combat.id}|${combatantKey(cb)}`)) this._snapshot.set(`${combat.id}|${combatantKey(cb)}`,poolFromTokenDelta(cb,a));}
   }
   _member(combat,actor){
-    return [...(combat?.combatants ?? [])].find(cb=>matchesCombatant(cb,actor)) ?? null;
+    return [...(combat?.combatants ?? [])].find(cb=>
+      actor?.uuid && actorUuidForCombatant(cb)===actor.uuid) ??
+      [...(combat?.combatants ?? [])].find(cb=>matchesCombatant(cb,actor)) ?? null;
   }
   _pollCombatants(finalizingCombat=null){
     if(!this._gm() || !game.settings.get(MODULE_ID,'enabled'))return;
@@ -280,11 +316,12 @@ export class CombatTracker {
     const combatant=this._member(combat,actor);
     return Boolean(actor?.statuses?.has?.('dead') || (combatant?.defeated && game.settings.get(MODULE_ID,'defeatedCountsAsKill')));
   }
-  _scheduleDefeat(actor,combat,explicit=null) {
-    if(!actor || !combat || !this._gm() ||
-      ![...(combat.combatants??[])].some(c=>matchesCombatant(c,actor))) return;
+  _scheduleDefeat(actor,combat,explicit=null,explicitMember=null) {
+    if(!actor || !combat || !this._gm()) return;
+    const member=explicitMember ?? this._member(combat,actor);
+    if(!member) return;
     const down = explicit===null ? this._isDown(actor,combat) : explicit;
-    const key=`${combat.id}|${combatantKey(this._member(combat,actor))}`;
+    const key=`${combat.id}|${combatantKey(member)}`;
     if(!down){
       this._lastDowned.set(key,false);
       clearTimeout(this._defeatTimers.get(key));this._defeatTimers.delete(key);
@@ -295,15 +332,15 @@ export class CombatTracker {
     clearTimeout(this._defeatTimers.get(key));
     this._defeatTimers.set(key,setTimeout(async()=>{
       this._defeatTimers.delete(key);
-      await this._flush(`${combat.id}|${combatantKey(this._member(combat,actor))}`);
+      await this._flush(key);
       await this._writer.catch(()=>{});
-      const latest=this._recentDamage.get(combatantKey(this._member(combat,actor)));
+      const latest=this._recentDamage.get(combatantKey(member));
       const source=latest?.source && latest.combatId===combat.id && now()-latest.ts<15000 ? latest.source : null;
       const defeated=this._isDead(actor,combat) || (explicit===true && game.settings.get(MODULE_ID,'defeatedCountsAsKill'));
       await this.acceptEvent({eventId:uid(),combatId:combat.id,createdAt:new Date().toISOString(),round:combat.round,turn:combat.turn,
         type:'downed',isDeath:defeated,targetActorUuid:actor.uuid,targetActorId:actor.id,targetName:actor.name,
         targetIsCharacter:characterActor(actor),targetIsToken:Boolean(tokenInfo(actor).tokenId),
-        targetCombatantKey:combatantKey(this._member(combat,actor)),
+        targetCombatantKey:combatantKey(member),
         sourceActorUuid:source?.uuid??null,sourceActorId:source?.id??null,sourceName:source?.name??null,
         sourceCombatantKey:latest?.sourceCombatantKey??null,
         attribution:source?'recent-explicit':'unattributed'});
@@ -316,7 +353,7 @@ export class CombatTracker {
     const actor=actorForCombatant(combatant);
     if(!actor){this._debug('missing combatant actor',combatant?.name,combatant?.id,combatant?.tokenId);return;}
     const key=combatantKey(combatant);
-    if(!this._snapshot.has(`${combat.id}|${key}`)) this._snapshot.set(`${combat.id}|${key}`,health(actor));
+    if(!this._snapshot.has(`${combat.id}|${key}`)) this._snapshot.set(`${combat.id}|${key}`,poolFromTokenDelta(combatant,actor));
     await this._writer.catch(()=>{});
     this._writer=this._writer.catch(()=>{}).then(async()=>{
       const state=clone(game.settings.get(MODULE_ID,SETTING_CURRENT)??{});
@@ -413,7 +450,7 @@ export class CombatTracker {
       for (const cb of combat.combatants ?? []) {
         const memberActor=actorForCombatant(cb);
         if(!memberActor)continue;
-        this._snapshot.set(`${combat.id}|${combatantKey(cb)}`,health(memberActor));
+        this._snapshot.set(`${combat.id}|${combatantKey(cb)}`,poolFromTokenDelta(cb,memberActor));
         this._lastDowned.set(`${combat.id}|${combatantKey(cb)}`,this._isDown(memberActor,combat));
         await this._registerCombatant(combat,cb);
       }
@@ -427,7 +464,7 @@ export class CombatTracker {
     // discard delayed defeat events when the combat document disappears.
     for(const cb of combat.combatants??[]) {
       const actor=actorForCombatant(cb);
-      if(actor && this._isDown(actor,combat)) this._scheduleDefeat(actor,combat,true);
+      if(actor && this._isDown(actor,combat)) this._scheduleDefeat(actor,combat,true,cb);
     }
     if(this._defeatTimers.size) await new Promise(resolve=>setTimeout(resolve,DEFEAT_SETTLE_MS+35));
     await this._writer.catch(()=>{});
@@ -435,6 +472,7 @@ export class CombatTracker {
     if(current.combatId!==combat.id) return;
     // Catch actors who joined initiative shortly before the encounter ended.
     for(const cb of combat.combatants??[]) await this._registerCombatant(combat,cb);
+    // Every initiative participant is retained, including no-action/zero-damage PCs and NPCs.
     const finalState=game.settings.get(MODULE_ID,SETTING_CURRENT)??current;
     const history=game.settings.get(MODULE_ID,SETTING_HISTORY)??[];
     if(history.some(h=>h.combatId===combat.id)) { await game.settings.set(MODULE_ID,SETTING_CURRENT,{});return; }
@@ -465,12 +503,14 @@ export class CombatTracker {
   _update(actor,changes,options,userId,knownCombat=null,knownMember=null,patch=null){
     if(!actor || !this._gm() || !game.settings.get(MODULE_ID,'enabled')) return;
     const combat=knownCombat ?? this._combat(actor);
-    if(!this._hasCombat(combat) && !options?.pf1csFinal) {this._debug('resource update ignored: no started combat',actor.name,actor.uuid);return;}
+    if(!knownCombat && !combat && patch && Object.keys(patch).length)
+      this._debug('unmatched resource update',actor.uuid,patch);
+    if(!combat?.started && !options?.pf1csFinal) {this._debug('resource update ignored: combat not started',actor.name,actor.uuid);return;}
     const member=knownMember ?? this._member(combat,actor);
     if(!member) {this._debug('resource update ignored: not initiative member',actor.name,actor.uuid);return;}
     const key=`${combat.id}|${combatantKey(member)}`;
     if(patch && !Object.keys(patch).length) patch=null;
-    const current=health(actor);
+    const current=knownMember ? poolFromTokenDelta(knownMember,actor) : health(actor);
     // A v13 ActorDelta hook can arrive while TokenDocument.actor still points
     // at the PRE-update synthetic instance. Never let a 250ms poll reset a
     // confirmed future snapshot back to that stale instance (then count it a
@@ -503,7 +543,7 @@ export class CombatTracker {
     if(hasChange(delta)) {
       this._debug('resource delta',actor.name,actor.uuid,combatantKey(member),delta);
       if(poolKeys.some(k=>k!=='soakRestored' && delta[k]>0))
-        this._enqueue(actor,combat,member,delta,userId,options);
+        this._enqueue(actor,combat,member,delta,userId,options,old,next);
     }
     this._scheduleDefeat(actor,combat);
   }
@@ -518,7 +558,15 @@ export class CombatTracker {
       itemName:'Action on initiative turn (inferred)',messageId:'',
       attribution:'inferred-turn'};
   }
-  _enqueue(actor,combat,member,delta,userId,options){
+  _enqueue(actor,combat,member,delta,userId,options,before=null,after=null){
+    // Excess loss past zero is verifiable ONLY where PF1e allows a negative
+    // final HP/Wounds value. A clamped-to-zero resource cannot prove overkill.
+    let overkill=0;
+    for(const pool of ['hp','wounds']){
+      const b=before?.[pool],a=after?.[pool];
+      if(b==null || a==null || a>=b)continue;
+      overkill=Math.max(overkill,Math.max(0,-a)-Math.max(0,-b));
+    }
     const key=`${combat.id}|${combatantKey(member)}`;
     let record=this._pending.get(key);
     const changed=new Set(poolKeys.filter(k=>delta[k]));
@@ -531,10 +579,11 @@ export class CombatTracker {
       ? this._inferTurnSource(combat,member) : null;
     const attributed=claimed??turnFallback;
     if(!record){
-      record={actor,combat,member,delta:Object.fromEntries(poolKeys.map(k=>[k,0])),resources:new Set(),source:attributed, userId};
+      record={actor,combat,member,delta:Object.fromEntries(poolKeys.map(k=>[k,0])),resources:new Set(),source:attributed, userId,overkill:0};
       this._pending.set(key,record);
     } else if(!record.source && attributed){ record.source=attributed; }
     record.delta=combine(record.delta,delta);
+    record.overkill+=overkill;
     for(const k of changed) record.resources.add(k);
     clearTimeout(record.timer);
     record.timer=setTimeout(()=>this._flush(key),125);
@@ -544,7 +593,7 @@ export class CombatTracker {
     if(!entry) return;
     this._pending.delete(key);
     clearTimeout(entry.timer);
-    const {actor,combat,member,delta,source}=entry;
+    const {actor,combat,member,delta,source,overkill}=entry;
     const damage=delta.soakDamage+delta.vigorDamage+delta.woundDamage+delta.hpDamage;
     const heal=delta.vigorHealing+delta.woundHealing+delta.hpHealing;
     const event={
@@ -554,7 +603,7 @@ export class CombatTracker {
       sourceCombatantKey:source?.sourceCombatantKey??null,targetCombatantKey:combatantKey(member),
       targetActorId:actor.id,targetActorUuid:actor.uuid,targetName:actor.name,
       targetIsCharacter:characterActor(actor),targetIsToken:Boolean(tokenInfo(actor).tokenId),attribution:source?(source.attribution??'explicit'):'unattributed',
-      rawAmount:null,mitigatedAmount:null,
+      rawAmount:null,mitigatedAmount:null,overkillAmount:overkill??0,
       ...delta, effectiveAmount:damage||heal
     };
     // Unknown non-soak restoration is not counted as healing by default.
@@ -580,7 +629,7 @@ export class CombatTracker {
       if(!combat) return;
       const members=[...(combat.combatants??[])];
       const resolve=(key,uuid,id)=>members.find(cb=>key && combatantKey(cb)===key) ??
-        members.find(cb=>uuid && actorForCombatant(cb)?.uuid===uuid) ??
+        members.find(cb=>uuid && actorUuidForCombatant(cb)===uuid) ??
         members.find(cb=>id && !cb.tokenId && cb.actorId===id) ?? null;
       const targetMember=resolve(incoming.targetCombatantKey,incoming.targetActorUuid,incoming.targetActorId);
       const sourceMember=resolve(incoming.sourceCombatantKey,incoming.sourceActorUuid,incoming.sourceActorId);
@@ -601,12 +650,14 @@ export class CombatTracker {
       const owner=sourceMember?ensureRecord(src,sourceMember,{id:incoming.sourceActorId,uuid:incoming.sourceActorUuid,name:incoming.sourceName}):null;
       const amountDamage=incoming.soakDamage+incoming.vigorDamage+incoming.woundDamage+incoming.hpDamage;
       const amountHealing=incoming.vigorHealing+incoming.woundHealing+incoming.hpHealing;
+      const knownOverkill=Number.isFinite(incoming.overkillAmount)?Math.max(0,Math.min(amountDamage,incoming.overkillAmount)):0;
       if(dest){
         if(incoming.type==='downed') dest.timesDowned++;
         dest.damageTaken+=amountDamage;dest.soakTaken+=incoming.soakDamage;
         dest.vigorTaken+=incoming.vigorDamage;dest.woundTaken+=incoming.woundDamage+incoming.hpDamage;
         if(amountDamage && !owner) dest.unattributedDamageTaken+=amountDamage;
         dest.healingReceived+=amountHealing;
+        dest.excessDamageTaken+=knownOverkill;
       }
       if(incoming.type==='downed' && incoming.isDeath && dest){
         state.defeated??=[];
@@ -619,7 +670,7 @@ export class CombatTracker {
       if(owner && (amountDamage||amountHealing)){
         const dealt=game.settings.get(MODULE_ID,'includeSoakInTotal')?amountDamage:amountDamage-incoming.soakDamage;
         if(amountDamage){
-          owner.damageDealt+=dealt;owner.soakDealt+=incoming.soakDamage;
+          owner.damageDealt+=dealt;owner.overdamage+=knownOverkill;owner.soakDealt+=incoming.soakDamage;
           owner.vigorDealt+=incoming.vigorDamage;owner.woundDealt+=incoming.woundDamage+incoming.hpDamage;
           if(dealt>owner.maxSingleHit){owner.maxSingleHit=dealt;owner.maxSingleHitSource=incoming.sourceItemName||'—';owner.maxSingleHitRound=incoming.round;}
           const name=String(incoming.sourceItemName||'—');
@@ -657,3 +708,5 @@ export class CombatTracker {
     return this.acceptEvent(e);
   }
 }
+
+export { actorUuidForCombatant, matchesCombatant, actorForCombatant, healthPatch };

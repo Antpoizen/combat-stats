@@ -227,3 +227,63 @@ await tracker._flush('v13-actor-delta-regression|Combatant:d-blood1');
 assert.equal(cur().enemies['Combatant:d-blood1'].damageTaken,109,'rehydration does not double-count');
 assert.equal(cur().characters['Combatant:d-player'].damageDealt,109,'current-turn fallback attributes valid member');
 console.log('OK: delayed v13 ActorDelta rehydration preserves 2 unlinked NPCs, counts HP delta once');
+
+// v1.0.11: Initiative roster exists BEFORE combat begins; full actor UUIDs
+// distinguish two synthetic actors even when their world Actor ID is shared.
+await tracker._finish(combat);
+combat.id='v1-0-11-uuid-regression';combat.name='UUID Initiative Test';combat.started=false;
+const n1=actor('COMMON','Bloodling','npc',[0,0],{},'Uuid1');
+const n2=actor('COMMON','Bloodling','npc',[0,0],{},'Uuid2');
+n1.system.attributes.hp.value=140;n2.system.attributes.hp.value=100;
+const td1={id:'Uuid1',uuid:'Scene.scene.Token.Uuid1',actorLink:false,parent:{id:'scene'},actor:n1};
+const td2={id:'Uuid2',uuid:'Scene.scene.Token.Uuid2',actorLink:false,parent:{id:'scene'},actor:n2};
+canvas.scene.tokens.get=id=>({Uuid1:td1,Uuid2:td2})[id]??null;
+combat.combatants=[
+  {id:'uuid-daleira',actor:a,actorId:a.id,initiative:22},
+  {id:'uuid-tangra',actor:b,actorId:b.id,initiative:18},
+  {id:'uuid-blood1',actor:n1,actorId:n1.id,token:td1,tokenId:td1.id,sceneId:'scene',initiative:11},
+  {id:'uuid-blood2',actor:n2,actorId:n2.id,token:td2,tokenId:td2.id,sceneId:'scene',initiative:8}
+];
+tracker._snapshot.clear();tracker._pending.clear();tracker._sourceContext.clear();tracker._recentDamage.clear();
+await tracker._begin(combat);
+assert.equal(Object.keys(cur().characters).length,2,'zero-damage PCs registered immediately on initiative roll');
+assert.equal(Object.keys(cur().enemies).length,2,'zero-damage enemies registered immediately on initiative roll');
+assert.ok(Object.values(cur().characters).every(r=>r.damageDealt===0 && r.damageTaken===0));
+assert.ok(Object.values(cur().enemies).every(r=>r.damageDealt===0 && r.damageTaken===0));
+const d1=tracker.diagnostics().find(x=>x.combatantId==='uuid-blood1');
+const d2=tracker.diagnostics().find(x=>x.combatantId==='uuid-blood2');
+assert.notEqual(d1.actorUuid,d2.actorUuid,'two unlinked combatants have distinct full Actor UUIDs');
+combat.started=true;combat.turn=0;combat.combatant=combat.combatants[0];
+// Simulate post-updateActor being fired with an absolute HP patch while the
+// synthetic token actor still shows its pre-update value.
+const change1={system:{attributes:{hp:{value:103}}}};
+tracker._update(n1,change1,{},'gm',null,null,{hp:103});
+await tracker._flush(`${combat.id}|Combatant:uuid-blood1`);
+assert.equal(cur().characters['Combatant:uuid-daleira'].damageDealt,37);
+assert.equal(cur().characters['Combatant:uuid-daleira'].maxSingleHit,37);
+assert.equal(cur().enemies['Combatant:uuid-blood1'].damageTaken,37);
+assert.equal(cur().enemies['Combatant:uuid-blood2'].damageTaken,0);
+// Foundry 13 can expose the updated ActorDelta even if the synthetic actor
+// still shows the old value and updateActor hooks were missed entirely.
+td2.delta={_source:{system:{attributes:{hp:{value:86}}}}};
+tracker._pollCombatants();
+await tracker._flush(`${combat.id}|Combatant:uuid-blood2`);
+assert.equal(cur().enemies['Combatant:uuid-blood2'].damageTaken,14,
+  'delta-only changed value is counted against correct unlinked token');
+assert.equal(cur().characters['Combatant:uuid-daleira'].damageDealt,51);
+// A second hit reduces HP below zero: the exact overshoot is observable.
+tracker._update(n1,{system:{attributes:{hp:{value:-11}}}}, {}, 'gm',null,null,{hp:-11});
+await tracker._flush(`${combat.id}|Combatant:uuid-blood1`);
+assert.equal(cur().characters['Combatant:uuid-daleira'].damageDealt,165);
+assert.equal(cur().characters['Combatant:uuid-daleira'].maxSingleHit,114,'largest single post-mitigation hit');
+assert.equal(cur().characters['Combatant:uuid-daleira'].overdamage,11,'negative HP supports verified overkill');
+assert.equal(cur().enemies['Combatant:uuid-blood1'].excessDamageTaken,11);
+// Mark defeated right before deleting encounter: proper killer credit.
+combat.combatants[2].defeated=true;
+tracker._scheduleDefeat(n1,combat,true,combat.combatants[2]);
+await tracker._finish(combat);
+const last=store.get('pf1e-combat-stats.combatHistory').at(-1);
+assert.equal(last.characters['Combatant:uuid-daleira'].kills,1);
+assert.equal(last.characters['Combatant:uuid-tangra'].damageDealt,0);
+assert.equal(last.enemies['Combatant:uuid-blood2'].damageTaken,14);
+console.log('OK: v1.0.11 UUID identity, initiative-zero roster, stale synthetic patch, max hit, overkill and one confirmed kill');
