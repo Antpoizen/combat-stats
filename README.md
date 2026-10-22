@@ -1,4 +1,4 @@
-# PF1e Combat Stats — v1.0.0-rc4 (development / integration-test build)
+# PF1e Combat Stats — v1.0.0-rc5 (development / integration-test build)
 
 A Pathfinder 1e (system **11.11**) adaptation of **Combat Stats v4.0.0**, originally by **Smantella**. Targets **Foundry 13.351**. Active PF1e required; **no D&D5e or Midi-QOL dependency**.
 
@@ -38,7 +38,7 @@ Because the upstream ZIP did not include README/LICENSE, full upstream license r
 ## Install
 
 1. Back up your world.
-2. Install `pf1e-combat-stats/` in Foundry `Data/modules`, or attach `module.json` + the matching ZIP to a GitHub **v1.0.0-rc4** release.
+2. Install `pf1e-combat-stats/` in Foundry `Data/modules`, or attach `module.json` + the matching ZIP to a GitHub **v1.0.0-rc5** release.
 3. Enable the module in a PF1e 11.11 world running Foundry 13.351.
 4. Configure **Vigor resource path**, **Wounds resource path**, and **HP fallback** in module settings after inspecting one PC and one NPC.
 5. Begin a new combat; apply damage as usual. The GM's client must be online and active.
@@ -114,7 +114,7 @@ Replays the observed encounter with Daleira and Tangra against two Bloodling syn
 
 Based on Combat Stats v4.0.0 by **Smantella**; redistributed with changes under **CC BY-SA 4.0**. See `ATTRIBUTION.md` and `LICENSE` and https://github.com/Smantella/combat-stats . All other combat modules remain independently owned; their source code was not copied.
 
-## v1.0.0-rc4 tracking fixes
+## v1.0.0-rc5 tracking fixes
 
 Combat participants are now registered as soon as they join an active combat, whether or not they have taken damage. Scene-token enemies damaged during a combat can be recorded even if omitted from initiative. Unlinked token actors are matched by their unique token-backed UUIDs.
 
@@ -137,3 +137,24 @@ Kills/downed transitions now have their own event path; the previous kill-credit
 - Old fights cannot be retroactively repaired from insufficient event data; test these changes with a **new** encounter.
 
 **Important:** Targeting or clicking Apply Damage is never counted as damage on its own. Source credit depends on a click-context match and an observed resource change. If damage is applied without a source signal, it stays unattributed; watch the diagnostic log and report both the Apply Damage workflow and the emitted event. The live environment has not yet been verified on rc3.
+
+## rc5: Investigation and damage-tracking fixes
+
+**This remains a testing release.** Changes relative to rc4:
+
+- Uses unique Foundry Combatant document IDs for per-initiative member records (particularly important when two tokens share a world Actor ID).
+- Prioritizes `combatant.token.actor` for v13 unlinked-token synthetic Actor reading rather than assuming world Actor data is up to date.
+- Listens to v13 ActorDelta post-update events and reads explicit resource values from delta changes, even when token.actor has not yet rehydrated.
+- Guards future ActorDelta snapshots against being reset by a poll of an old synthetic Actor (preventing duplicated damage).
+- Keeps a 250 ms initiative-only poll and never adds off-initiative tokens.
+- Adds an inspection API to diagnose which participants are registered and which resource values are readable.
+
+Run this **while combat is underway**, as the GM, in browser Console or a Foundry script macro:
+
+```js
+console.table(game.modules.get('pf1e-combat-stats').api.getDiagnostics());
+```
+
+Compare `trackedSnapshot` with `currentHealth` and `matched` for each initiative combatant. If unlinked NPCs still fail to count HP damage, capture the table immediately after a hit and provide it with the console log.
+
+**Attribution warning:** the setting `turnAttributionFallback` infers attacker from whose initiative turn it is when a verified actor source is unavailable. It can misattribute reactions, delayed effects and ready actions. The module does not currently calculate overkill correctly for Wounds/Vigor and cannot automatically recover events from earlier builds.

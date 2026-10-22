@@ -164,9 +164,9 @@ tracker._snapshot.clear();tracker._pending.clear();tracker._sourceContext.clear(
 await tracker._begin(combat);
 assert.equal(Object.keys(cur().characters).length,2);
 assert.equal(Object.keys(cur().enemies).length,2,'two synthetic actors with same Actor ID get different combatant records');
-assert.ok(cur().enemies['scene:Token:T1']);assert.ok(cur().enemies['scene:Token:T4']);
-assert.equal(cur().enemies['scene:Token:T1'].name,'Bloodling [1]');
-assert.equal(cur().enemies['scene:Token:T4'].name,'Bloodling [2]');
+assert.ok(cur().enemies['Combatant:npc-a']);assert.ok(cur().enemies['Combatant:npc-b']);
+assert.equal(cur().enemies['Combatant:npc-a'].name,'Bloodling [1]');
+assert.equal(cur().enemies['Combatant:npc-b'].name,'Bloodling [2]');
 async function hit(turn,target,pool,amount,key){
   combat.turn=turn;combat.combatant=combat.combatants[turn];
   if(pool==='soak')target.flags['armor-soak-pool'].current-=amount;
@@ -174,24 +174,56 @@ async function hit(turn,target,pool,amount,key){
   tracker._pollCombatants(); // Must work even when updateActor never fires on a synthetic token.
   await tracker._flush(`${combat.id}|${key}`);
 }
-await hit(0,bloodA,'hp',14,'scene:Token:T1');
-await hit(3,a,'vigor',17,'A');await hit(3,a,'soak',16,'A');
-await hit(1,bloodA,'hp',41,'scene:Token:T1');await hit(1,bloodA,'hp',43,'scene:Token:T1');
-await hit(2,a,'soak',12,'A');await hit(2,a,'vigor',16,'A');
-await hit(0,bloodA,'hp',29,'scene:Token:T1');
-await hit(0,bloodB,'hp',14,'scene:Token:T4');
+await hit(0,bloodA,'hp',14,'Combatant:npc-a');
+await hit(3,a,'vigor',17,'Combatant:pc-a');await hit(3,a,'soak',16,'Combatant:pc-a');
+await hit(1,bloodA,'hp',41,'Combatant:npc-a');await hit(1,bloodA,'hp',43,'Combatant:npc-a');
+await hit(2,a,'soak',12,'Combatant:pc-a');await hit(2,a,'vigor',16,'Combatant:pc-a');
+await hit(0,bloodA,'hp',29,'Combatant:npc-a');
+await hit(0,bloodB,'hp',14,'Combatant:npc-b');
 combat.combatants[2].defeated=true;tracker._scheduleDefeat(bloodA,combat,true);
 // End immediately, before the async defeated timer fires.
 await tracker._finish(combat);
 const final=store.get('pf1e-combat-stats.combatHistory').at(-1);
-assert.equal(final.characters.A.damageDealt,57);
-assert.equal(final.characters.A.damageTaken,61);
-assert.equal(final.characters.A.kills,1);
-assert.equal(final.characters.B.damageDealt,84);
-assert.equal(final.enemies['scene:Token:T1'].damageTaken,127);
-assert.equal(final.enemies['scene:Token:T4'].damageTaken,14);
-assert.equal(final.enemies['scene:Token:T1'].damageDealt,28);
-assert.equal(final.enemies['scene:Token:T4'].damageDealt,33);
+assert.equal(final.characters["Combatant:pc-a"].damageDealt,57);
+assert.equal(final.characters["Combatant:pc-a"].damageTaken,61);
+assert.equal(final.characters["Combatant:pc-a"].kills,1);
+assert.equal(final.characters["Combatant:pc-b"].damageDealt,84);
+assert.equal(final.enemies['Combatant:npc-a'].damageTaken,127);
+assert.equal(final.enemies['Combatant:npc-b'].damageTaken,14);
+assert.equal(final.enemies['Combatant:npc-a'].damageDealt,28);
+assert.equal(final.enemies['Combatant:npc-b'].damageDealt,33);
 assert.equal(Object.keys(final.enemies).length,2);
 assert.ok(final.events.filter(e=>e.attribution==='inferred-turn').length>=8);
 console.log('OK: second live test reproduced: Daleira 57/61 + kill, Tangra 84, two Bloodlings with shared base actor IDs');
+
+// Foundry v13 ActorDelta callback regression: an unlinked-token synthetic
+// actor can be replaced AFTER updateActorDelta fires. Explicit changed fields
+// must be observed even if token.actor is momentarily stale.
+const baseHP=140;
+const first=actor('SHARED', 'Bloodling','npc',[0,0],{},'DeltaT1');
+const second=actor('SHARED','Bloodling','npc',[0,0],{},'DeltaT2');
+first.system.attributes.hp.value=baseHP;
+second.system.attributes.hp.value=baseHP;
+const doc1={id:'DeltaT1',uuid:'Scene.scene.Token.DeltaT1',parent:{id:'scene'},actor:first};
+const doc2={id:'DeltaT2',uuid:'Scene.scene.Token.DeltaT2',parent:{id:'scene'},actor:second};
+canvas.scene.tokens.get=id=>({DeltaT1:doc1,DeltaT2:doc2})[id]??null;
+combat.id='v13-actor-delta-regression';combat.started=true;combat.turn=0;
+combat.combatants=[{id:'d-player',actor:a,actorId:a.id},
+  {id:'d-blood1',actor:first,actorId:'SHARED',token:doc1,tokenId:'DeltaT1',sceneId:'scene',defeated:false},
+  {id:'d-blood2',actor:second,actorId:'SHARED',token:doc2,tokenId:'DeltaT2',sceneId:'scene',defeated:false}];
+tracker._snapshot.clear();tracker._pending.clear();tracker._sourceContext.clear();tracker._recentDamage.clear();
+await tracker._begin(combat);
+assert.equal(Object.keys(cur().enemies).length,2);
+tracker._observeActorDelta({parent:doc1}, {system:{attributes:{hp:{value:31}}}}, {}, 'gm');
+await tracker._flush('v13-actor-delta-regression|Combatant:d-blood1');
+assert.equal(cur().enemies['Combatant:d-blood1'].damageTaken,109,'direct ActorDelta absolute HP update captured');
+assert.equal(cur().enemies['Combatant:d-blood2'].damageTaken,0,'second unlinked bloodling untouched');
+// Now rehydrate token.actor after the delta callback: no duplicate should occur.
+const rehydrated=actor('SHARED','Bloodling','npc',[0,0],{},'DeltaT1');
+rehydrated.system.attributes.hp.value=31;
+doc1.actor=rehydrated;
+tracker._pollCombatants();
+await tracker._flush('v13-actor-delta-regression|Combatant:d-blood1');
+assert.equal(cur().enemies['Combatant:d-blood1'].damageTaken,109,'rehydration does not double-count');
+assert.equal(cur().characters['Combatant:d-player'].damageDealt,109,'current-turn fallback attributes valid member');
+console.log('OK: delayed v13 ActorDelta rehydration preserves 2 unlinked NPCs, counts HP delta once');

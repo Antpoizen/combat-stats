@@ -1,3 +1,12 @@
+# v1.0.0-rc5
+
+- Fix synthetic unlinked token identity using Combatant ID rather than base Actor ID.
+- Observe ActorDelta post-update resource changes and prevent stale rehydration double-counts.
+- Prefer authoritative Combatant.token.actor over world actor when available.
+- Provide `api.getDiagnostics()` for in-world resource/identity troubleshooting.
+- Expand offline tests for delayed ActorDelta synthetic actor updates.
+- Still requires live Foundry v13.351/PF1e v11.11 integration validation.
+
 # v1.0.0-rc4
 
 - Fixed multiple unlinked tokens using the same base Actor ID collapsing into a single combatant. Combatant-scoped keys now distinguish Token IDs and display same-named NPCs as `Bloodling [1]` and `Bloodling [2]`.
