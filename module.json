@@ -2,7 +2,7 @@
   "id": "pf1e-combat-stats",
   "title": "PF1e Combat Stats",
   "description": "PF1e combat statistics and history, derived from Combat Stats v4.0.0 by Smantella. Wounds/Vigor and Armor Soak aware.",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "compatibility": {
     "minimum": "13",
     "verified": "13.351",
@@ -41,5 +41,5 @@
   "socket": false,
   "url": "https://github.com/Antpoizen/combat-stats",
   "manifest": "https://raw.githubusercontent.com/Antpoizen/combat-stats/refs/heads/master/module.json",
-  "download": "https://github.com/Antpoizen/combat-stats/releases/download/v1.0.9/v1.0.9.zip"
+  "download": "https://github.com/Antpoizen/combat-stats/releases/download/v1.0.10/v1.0.10.zip"
 }
