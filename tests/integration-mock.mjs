@@ -287,3 +287,77 @@ assert.equal(last.characters['Combatant:uuid-daleira'].kills,1);
 assert.equal(last.characters['Combatant:uuid-tangra'].damageDealt,0);
 assert.equal(last.enemies['Combatant:uuid-blood2'].damageTaken,14);
 console.log('OK: v1.0.11 UUID identity, initiative-zero roster, stale synthetic patch, max hit, overkill and one confirmed kill');
+
+// v1.0.13: hostile/friendly dispositions override sheet type, and EVERY
+// initiative combatant must be enrolled even when its actor is not resolved.
+await tracker._finish(combat);
+combat.id='v1013-disposition-and-zeros';combat.started=false;combat.name='Eight Initiative Participants';
+const friendlyNpc=actor('FRIEND-NPC','Friendly NPC Companion','npc',[15,15]);
+const hostileChar=actor('HOSTILE-CHAR','Hostile Character Sheet','character',[20,15]);
+const disposedFriendly={id:'friend-token',uuid:'Scene.scene.Token.friend-token',actorLink:true,disposition:1,parent:{id:'scene'},actor:friendlyNpc};
+const disposedHostile={id:'hostile-token',uuid:'Scene.scene.Token.hostile-token',actorLink:true,disposition:-1,parent:{id:'scene'},actor:hostileChar};
+const disposedN1={...td1,disposition:-1};
+const disposedN2={...td2,disposition:-1};
+const missingToken={id:'unresolved-token',uuid:'Scene.scene.Token.unresolved-token',actorLink:false,disposition:-1,parent:{id:'scene'},actor:null};
+canvas.scene.tokens.get=id=>({'friend-token':disposedFriendly,'hostile-token':disposedHostile,Uuid1:disposedN1,Uuid2:disposedN2,'unresolved-token':missingToken})[id]??null;
+combat.combatants=[
+  {id:'roster-a',actor:a,actorId:a.id,initiative:20},
+  {id:'roster-b',actor:b,actorId:b.id,initiative:18},
+  {id:'roster-c',actor:c,actorId:c.id,initiative:17},
+  {id:'roster-friendly-npc',actor:friendlyNpc,actorId:friendlyNpc.id,token:disposedFriendly,tokenId:'friend-token',sceneId:'scene',initiative:16},
+  {id:'roster-hostile-char',actor:hostileChar,actorId:hostileChar.id,token:disposedHostile,tokenId:'hostile-token',sceneId:'scene',initiative:15},
+  {id:'roster-enemy1',actor:n1,actorId:n1.id,token:disposedN1,tokenId:'Uuid1',sceneId:'scene',initiative:13,defeated:false},
+  {id:'roster-enemy2',actor:n2,actorId:n2.id,token:disposedN2,tokenId:'Uuid2',sceneId:'scene',initiative:12,defeated:false},
+  {id:'roster-unresolved',actor:null,actorId:'LOST-ACTOR',token:missingToken,tokenId:'unresolved-token',sceneId:'scene',initiative:10}
+];
+tracker._snapshot.clear();tracker._pending.clear();tracker._sourceContext.clear();tracker._recentDamage.clear();
+await tracker._begin(combat);
+assert.equal(Object.keys(cur().characters).length,4,'three characters and friendly NPC all enrolled');
+assert.equal(Object.keys(cur().enemies).length,4,'hostile character + two enemy tokens + unresolved token enrolled');
+assert.ok(cur().characters['Combatant:roster-friendly-npc'],'friendly disposition wins over NPC actor type');
+assert.ok(cur().enemies['Combatant:roster-hostile-char'],'hostile disposition wins over character actor type');
+assert.ok(cur().enemies['Combatant:roster-unresolved'],'unresolved actor still enrolled at zero');
+assert.ok([...Object.values(cur().characters),...Object.values(cur().enemies)].every(r=>r.damageDealt===0&&r.damageTaken===0&&r.kills===0),'all eight roster entries start with zeros');
+assert.equal(tracker.diagnostics().length,8,'diagnostics report all eight initiative entries');
+const {ChartsApp}=await import('../scripts/charts.js');
+const liveView=await new ChartsApp()._prepareContext({});
+assert.equal(Object.keys(liveView.history.find(f=>f.isLive)?.characters??{}).length,4,'Charts includes all four friendly entries DURING combat');
+assert.equal(Object.keys(liveView.history.find(f=>f.isLive)?.enemies??{}).length,4,'Charts includes all four hostile entries DURING combat');
+assert.ok(liveView.history.some(f=>f.isLive),'currently tracked combat selectable in Charts menu');
+
+// Socket sender is carried in the payload. A valid player-authored chat-card
+// source can be relayed to the GM; another user's ID must be rejected.
+combat.started=true;combat.turn=0;combat.combatant=combat.combatants[0];
+const player={id:'p1',isGM:false,active:true};users.push(player);
+a.testUserPermission=(user,permission)=>user.id==='p1'&&permission==='OWNER';
+const pmsg={id:'v1013-chat',author:{id:'p1'},speaker:{actor:'A'},system:{targets:['Uuid1']}};
+game.messages.set(pmsg.id,pmsg);
+tracker._socketMessage({type:'chatApplied',senderId:'other',messageId:pmsg.id,targetUuids:[n1.uuid]});
+assert.equal(tracker._claimSource(n1),null,'invalid socket sender refused');
+tracker._socketMessage({type:'chatApplied',senderId:'p1',messageId:pmsg.id,targetUuids:[n1.uuid]});
+assert.equal(tracker._claimSource(n1)?.source.uuid,a.uuid,'player socket source attributed to actual actor UUID');
+
+// First unconscious, later defeated: one downed event, one kill, no duplicate.
+tracker.queueSource({sourceActor:a,targetActor:n1,itemName:'Finishing Strike'});
+const previousHP=n1.system.attributes.hp.value;
+n1.system.attributes.hp.value=previousHP-9;
+tracker._update(n1,{}, {},'gm');
+await tracker._flush(`${combat.id}|Combatant:roster-enemy1`);
+n1.statuses.add('unconscious');
+tracker._scheduleDefeat(n1,combat,null,combat.combatants[5]);
+await new Promise(resolve=>setTimeout(resolve,440));
+assert.equal(cur().characters['Combatant:roster-a'].kills,0,'unconscious is not a kill');
+assert.equal(cur().enemies['Combatant:roster-enemy1'].timesDowned,1,'downed recorded once');
+combat.combatants[5].defeated=true;
+tracker._scheduleDefeat(n1,combat,true,combat.combatants[5]);
+await new Promise(resolve=>setTimeout(resolve,440));
+assert.equal(cur().characters['Combatant:roster-a'].kills,1,'marking defeated after unconscious credits original attacker');
+assert.equal(cur().enemies['Combatant:roster-enemy1'].timesDowned,1,'no second downed event on death');
+tracker._scheduleDefeat(n1,combat,true,combat.combatants[5]);
+await new Promise(resolve=>setTimeout(resolve,440));
+assert.equal(cur().characters['Combatant:roster-a'].kills,1,'repeat defeated marker does not give another kill');
+await tracker._finish(combat);
+const storedFight=store.get('pf1e-combat-stats.combatHistory').at(-1);
+assert.equal(Object.keys(storedFight.characters).length,4);
+assert.equal(Object.keys(storedFight.enemies).length,4);
+console.log('OK: v1.0.13 eight zero-value initiative entries, disposition-first roles, player socket source, unconscious-to-defeated kill');

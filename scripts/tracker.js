@@ -68,10 +68,30 @@ const poolKeys = ['soakDamage','vigorDamage','woundDamage','hpDamage','vigorHeal
 function combine(a,b) { const res={...a}; for(const key of poolKeys) res[key] = (res[key]||0) + (b[key]||0); return res; }
 function hasChange(d) { return poolKeys.some(k => d[k]>0); }
 function participant(actor) { return {id:actor.id,name:actor.name,uuid:actor.uuid}; }
-function characterActor(actor) {
-  // PF1e NPC companions may use NPC sheets, while PCs can be embedded token actors.
-  // Player ownership is the strongest indication; character sheet type is a fallback.
-  return actor?.hasPlayerOwner === true || actor?.type === 'character';
+/** Classify a COMBATANT, not an arbitrary Actor. A token's disposition is
+ * authoritative for this world's friendly-PC / hostile-NPC convention; actor
+ * type and ownership are fallbacks for combatants without token documents.
+ * This deliberately avoids assuming that shared ownership makes an NPC a PC.
+ */
+export function combatantSide(cb,actor=null) {
+  const token=cb?.token ?? (cb?.tokenId && canvas?.scene?.tokens?.get?.(cb.tokenId)) ?? null;
+  const disposition=token?.disposition ?? (cb?.tokenId?canvas?.scene?.tokens?.get?.(cb.tokenId)?.disposition:null) ?? cb?.disposition ?? actor?.token?.disposition ?? actor?.prototypeToken?.disposition;
+  if(disposition!==undefined && disposition!==null) {
+    if(Number(disposition)===1) return 'characters'; // CONST.TOKEN_DISPOSITIONS.FRIENDLY
+    if(Number(disposition)===-1) return 'enemies'; // CONST.TOKEN_DISPOSITIONS.HOSTILE
+  }
+  if(actor?.type==='character') return 'characters';
+  if(actor?.type==='npc') return 'enemies';
+  if(actor?.hasPlayerOwner===true) return 'characters';
+  return 'enemies';
+}
+function characterActor(actor) { return actor?.type==='character' || (actor?.type!=='npc' && actor?.hasPlayerOwner===true); }
+function placeholderActor(cb) {
+  const token=cb?.token;
+  const scene=cb?.sceneId ?? token?.parent?.id ?? cb?.parent?.scene?.id ?? null;
+  const tid=cb?.tokenId ?? token?.id ?? null;
+  const uuid=tid && scene ? `Scene.${scene}.Token.${tid}.Actor.${cb.actorId??'unknown'}` : `Actor.${cb?.actorId??cb?.id??'unknown'}`;
+  return {id:cb?.actorId??cb?.id??'unknown',uuid,name:cb?.name??token?.name??'Unknown',type:combatantSide(cb)==='characters'?'character':'npc'};
 }
 // In v13 two unlinked tokens may both have Actor.YR... IDs; their Token IDs
 // uniquely identify their synthetic actors. Always prefer Token identity.
@@ -83,7 +103,8 @@ function tokenInfo(actor) {
 }
 function actorKey(actor) {
   // Full UUID is canonical for the damage/healing event source and recipient.
-  return fullActorUuid(actor) ?? `${tokenInfo(actor).sceneId}:${tokenInfo(actor).tokenId}` ?? actor?.id;
+  const t=tokenInfo(actor);
+  return fullActorUuid(actor) ?? (t.sceneId && t.tokenId ? `Scene.${t.sceneId}.Token.${t.tokenId}` : null) ?? actor?.id ?? null;
 }
 function combatActor(combatant) { return combatant?.actor ?? combatant?.token?.actor ?? null; }
 function fullActorUuid(actor) { return typeof actor?.uuid === 'string' ? actor.uuid : null; }
@@ -138,7 +159,12 @@ function actorForCombatant(cb) {
     const doc=canvas.scene.tokens?.get?.(cb.tokenId);
     if(doc?.actor) return doc.actor;
   }
-  return cb?.token?.actor ?? combatActor(cb);
+  const candidate=cb?.token?.actor ?? combatActor(cb) ?? (cb?.actorId ? game.actors?.get?.(cb.actorId) : null) ?? null;
+  // Never substitute the shared base world Actor for a missing unlinked
+  // synthetic token actor. That would corrupt both identity and HP baseline.
+  if(cb?.tokenId && cb?.token?.actorLink===false && candidate &&
+    !String(candidate.uuid??'').includes(`.Token.${cb.tokenId}.`)) return null;
+  return candidate;
 }
 function displayNameForCombatant(combat,cb,actor) {
   const name=String(cb?.name || actor?.name || 'Unknown');
@@ -181,11 +207,18 @@ export class CombatTracker {
   }
   diagnostics() {
     const combat=game.combat;
+    const current=game.settings.get(MODULE_ID,SETTING_CURRENT)??{};
     return [...(combat?.combatants??[])].map(cb=>{
       const actor=actorForCombatant(cb);
       const key=`${combat.id}|${combatantKey(cb)}`;
+      const bucket=combatantSide(cb,actor);
+      const entry=current[bucket]?.[combatantKey(cb)] ?? current[bucket==='characters'?'enemies':'characters']?.[combatantKey(cb)];
       return {combatantId:cb.id,tokenId:cb.tokenId,sceneId:cb.sceneId,
-        name:cb.name,actorUuid:actorUuidForCombatant(cb),tokenUuid:tokenUuidForCombatant(cb),actorName:actor?.name,
+        name:cb.name,actorType:actor?.type??'unresolved',side:bucket,
+        disposition:cb?.token?.disposition??null,initiative:cb.initiative??null,
+        actorUuid:actorUuidForCombatant(cb),tokenUuid:tokenUuidForCombatant(cb),actorName:actor?.name,
+        tracked:Boolean(entry),trackedBucket:entry?bucket:null,damageDealt:entry?.damageDealt??0,
+        damageTaken:entry?.damageTaken??0,kills:entry?.kills??0,maxSingleHit:entry?.maxSingleHit??0,
         matched:actor?matchesCombatant(cb,actor):false,
         trackedSnapshot:this._snapshot.get(key)??null,
         currentHealth:actor?health(actor):null,mergedActorDeltaHealth:actor?poolFromTokenDelta(cb,actor):null,
@@ -303,6 +336,11 @@ export class CombatTracker {
       if(!combat.started && !finalizingCombat)continue;
       for(const cb of combat.combatants??[]) {
         const actor=actorForCombatant(cb);
+        // Reconcile roster periodically: a token/ActorDelta can be temporarily
+        // unresolved on initiative creation or after a scene rehydration.
+        const state=game.settings.get(MODULE_ID,SETTING_CURRENT)??{};
+        const bucket=combatantSide(cb,actor);
+        if(!state[bucket]?.[combatantKey(cb)]) void this._registerCombatant(combat,cb);
         if(actor) this._update(actor,{}, {pf1csPoll:true,pf1csFinal:Boolean(finalizingCombat)},null,combat,cb);
       }
     }
@@ -320,49 +358,73 @@ export class CombatTracker {
     if(!actor || !combat || !this._gm()) return;
     const member=explicitMember ?? this._member(combat,actor);
     if(!member) return;
-    const down = explicit===null ? this._isDown(actor,combat) : explicit;
     const key=`${combat.id}|${combatantKey(member)}`;
-    if(!down){
+    const down=Boolean(this._isDown(actor,combat) || explicit===true);
+    const death=Boolean(this._isDead(actor,combat) ||
+      (explicit===true && game.settings.get(MODULE_ID,'defeatedCountsAsKill')));
+    if(!down) {
       this._lastDowned.set(key,false);
+      this._lastDeath.set(key,false);
       clearTimeout(this._defeatTimers.get(key));this._defeatTimers.delete(key);
       return;
     }
-    if(this._lastDowned.get(key) === true) return;
+    const wasDown=this._lastDowned.get(key)===true;
+    const wasDead=this._lastDeath.get(key)===true;
+    // Being downed and dying/defeated are DIFFERENT transitions. Recording an
+    // unconscious condition must not suppress a subsequent GM Defeated mark.
+    if(wasDown && (!death || wasDead)) return;
     this._lastDowned.set(key,true);
+    if(death)this._lastDeath.set(key,true);
     clearTimeout(this._defeatTimers.get(key));
     this._defeatTimers.set(key,setTimeout(async()=>{
       this._defeatTimers.delete(key);
       await this._flush(key);
       await this._writer.catch(()=>{});
       const latest=this._recentDamage.get(combatantKey(member));
-      const source=latest?.source && latest.combatId===combat.id && now()-latest.ts<15000 ? latest.source : null;
-      const defeated=this._isDead(actor,combat) || (explicit===true && game.settings.get(MODULE_ID,'defeatedCountsAsKill'));
+      // Retain last damaging attacker for the duration of the combat, even if
+      // the GM marks Defeated after inspecting the token or finishing a turn.
+      const source=latest?.source && latest.combatId===combat.id ? latest.source : null;
       await this.acceptEvent({eventId:uid(),combatId:combat.id,createdAt:new Date().toISOString(),round:combat.round,turn:combat.turn,
-        type:'downed',isDeath:defeated,targetActorUuid:actor.uuid,targetActorId:actor.id,targetName:actor.name,
-        targetIsCharacter:characterActor(actor),targetIsToken:Boolean(tokenInfo(actor).tokenId),
+        type:death?'death':'downed',newDown:!wasDown,isDeath:death,
+        targetActorUuid:actor.uuid,targetActorId:actor.id,targetName:actor.name,
+        targetIsCharacter:combatantSide(member,actor)==='characters',targetIsToken:Boolean(tokenInfo(actor).tokenId),
         targetCombatantKey:combatantKey(member),
         sourceActorUuid:source?.uuid??null,sourceActorId:source?.id??null,sourceName:source?.name??null,
         sourceCombatantKey:latest?.sourceCombatantKey??null,
-        attribution:source?'recent-explicit':'unattributed'});
+        attribution:source?(latest?.attribution??'recent-damage'):'unattributed'});
     },DEFEAT_SETTLE_MS));
   }
   // Do not presume defeat is death without the configured rule. Both are tracked.
   _transitionDefeated(actor,down,combat){this._scheduleDefeat(actor,combat,down);}
   async _registerCombatant(combat,combatant){
-    if(!this._gm() || !this._hasCombat(combat)) return;
-    const actor=actorForCombatant(combatant);
-    if(!actor){this._debug('missing combatant actor',combatant?.name,combatant?.id,combatant?.tokenId);return;}
+    if(!this._gm() || !this._hasCombat(combat) || !combatant) return;
+    const resolved=actorForCombatant(combatant);
+    const actor=resolved??placeholderActor(combatant);
     const key=combatantKey(combatant);
-    if(!this._snapshot.has(`${combat.id}|${key}`)) this._snapshot.set(`${combat.id}|${key}`,poolFromTokenDelta(combatant,actor));
-    await this._writer.catch(()=>{});
-    this._writer=this._writer.catch(()=>{}).then(async()=>{
+    if(resolved && !this._snapshot.has(`${combat.id}|${key}`))
+      this._snapshot.set(`${combat.id}|${key}`,poolFromTokenDelta(combatant,resolved));
+    this._writer=this._writer.catch(err=>console.error(`${MODULE_ID} roster error`,err)).then(async()=>{
       const state=clone(game.settings.get(MODULE_ID,SETTING_CURRENT)??{});
       if(state.combatId!==combat.id) return;
-      const bucket=characterActor(actor)?'characters':'enemies';
-      const k=key;
-      state[bucket]??={};
-      if(state[bucket][k])return;
-      state[bucket][k]={...recordDefault(actor),name:displayNameForCombatant(combat,combatant,actor),combatantKey:k,tokenId:combatant.tokenId??null};
+      const bucket=combatantSide(combatant,resolved);
+      const other=bucket==='characters'?'enemies':'characters';
+      state[bucket]??={};state[other]??={};
+      // A combatant can be reclassified after its real token is resolved. Move
+      // its existing numbers instead of creating duplicates or losing history.
+      const previous=state[other][key];
+      if(previous && !state[bucket][key])state[bucket][key]=previous;
+      if(previous)delete state[other][key];
+      const record=state[bucket][key]??={...recordDefault(actor),combatantKey:key};
+      record.name=displayNameForCombatant(combat,combatant,actor);
+      record.combatantKey=key;
+      record.combatantId=combatant.id??null;
+      record.tokenId=combatant.tokenId??null;
+      record.actorUuid=resolved?.uuid??record.actorUuid??actor.uuid;
+      record.uuid=record.actorUuid;
+      record.actorType=resolved?.type??record.actorType??'unresolved';
+      record.side=bucket;
+      record.disposition=combatant.token?.disposition??null;
+      record.initiative=combatant.initiative??null;
       await game.settings.set(MODULE_ID,SETTING_CURRENT,state);
     });
     return this._writer;
@@ -396,16 +458,22 @@ export class CombatTracker {
         targetUuids.push(actor.uuid);
     }
     if(!targetUuids.length){this._debug('chat apply clicked without enrolled target',message.id);return;}
-    const msg={type:'chatApplied',messageId:message.id,targetUuids:[...new Set(targetUuids)]};
+    const msg={type:'chatApplied',messageId:message.id,targetUuids:[...new Set(targetUuids)],senderId:game.user?.id};
     this._debug('chat apply intent',msg);
     if(this._gm()) this._socketMessage(msg,game.user.id);
     else game.socket?.emit?.(SOCKET_CHANNEL,msg);
   }
   _socketMessage(payload,senderId){
     if(!this._gm() || payload?.type!=='chatApplied' || !payload.messageId || !Array.isArray(payload.targetUuids)) return;
-    const sender=game.users?.get?.(senderId)??[...(game.users??[])].find(x=>x.id===senderId);
+    // Socket.IO callbacks do not receive the sending Foundry User ID as a
+    // second argument. Include it in the payload, then validate against the
+    // author's actual ChatMessage and the source actor's permissions.
+    const claimedId=payload.senderId ?? (typeof senderId==='string'?senderId:null);
+    const sender=game.users?.get?.(claimedId)??[...(game.users??[])].find(x=>x.id===claimedId);
     const message=game.messages?.get?.(payload.messageId);
-    if(!message || !sender || !sender.active) return;
+    if(!message || !sender || !sender.active || !claimedId) {this._debug('rejected chat attribution: missing sender or message',payload?.messageId,claimedId);return;}
+    const authorId=message.author?.id??message.user?.id??message.user;
+    if(!sender.isGM && authorId!==claimedId) {this._debug('rejected chat attribution: sender is not message author',claimedId,authorId);return;}
     const combat=game.combat;
     if(!combat?.started) return;
     const source=(message.speaker?.token
@@ -415,8 +483,7 @@ export class CombatTracker {
     if(!source || ![...combat.combatants].some(c=>matchesCombatant(c,source))){this._debug('chat source not in initiative',payload.messageId);return;}
     // Non-GM clients may only attribute actions to actors they own or to
     // messages they authored. Do not let target selection forge damage credit.
-    if(!sender.isGM && message.author?.id!==senderId &&
-      !source.testUserPermission?.(sender,'OWNER')) return;
+    if(!sender.isGM && !source.testUserPermission?.(sender,'OWNER')) return;
     const listed=Array.isArray(message.system?.targets)?message.system.targets:[];
     const approved=new Set(listed.map(id=>{
       const doc=canvas?.scene?.tokens?.get?.(id)??actorFromUuid(id);return doc?.actor?.uuid;
@@ -449,9 +516,11 @@ export class CombatTracker {
       await game.settings.set(MODULE_ID,SETTING_CURRENT,record);
       for (const cb of combat.combatants ?? []) {
         const memberActor=actorForCombatant(cb);
-        if(!memberActor)continue;
-        this._snapshot.set(`${combat.id}|${combatantKey(cb)}`,poolFromTokenDelta(cb,memberActor));
-        this._lastDowned.set(`${combat.id}|${combatantKey(cb)}`,this._isDown(memberActor,combat));
+        if(memberActor) {
+          this._snapshot.set(`${combat.id}|${combatantKey(cb)}`,poolFromTokenDelta(cb,memberActor));
+          this._lastDowned.set(`${combat.id}|${combatantKey(cb)}`,this._isDown(memberActor,combat));
+          this._lastDeath.set(`${combat.id}|${combatantKey(cb)}`,this._isDead(memberActor,combat));
+        }
         await this._registerCombatant(combat,cb);
       }
     } finally{this._combatInitializing.delete(combat.id);}
@@ -464,7 +533,7 @@ export class CombatTracker {
     // discard delayed defeat events when the combat document disappears.
     for(const cb of combat.combatants??[]) {
       const actor=actorForCombatant(cb);
-      if(actor && this._isDown(actor,combat)) this._scheduleDefeat(actor,combat,true,cb);
+      if(actor && this._isDown(actor,combat)) this._scheduleDefeat(actor,combat,cb.defeated===true?true:null,cb);
     }
     if(this._defeatTimers.size) await new Promise(resolve=>setTimeout(resolve,DEFEAT_SETTLE_MS+35));
     await this._writer.catch(()=>{});
@@ -602,7 +671,7 @@ export class CombatTracker {
       sourceName:source?.source.name??null,sourceItemName:source?.itemName??null,sourceMessageId:source?.messageId??null,
       sourceCombatantKey:source?.sourceCombatantKey??null,targetCombatantKey:combatantKey(member),
       targetActorId:actor.id,targetActorUuid:actor.uuid,targetName:actor.name,
-      targetIsCharacter:characterActor(actor),targetIsToken:Boolean(tokenInfo(actor).tokenId),attribution:source?(source.attribution??'explicit'):'unattributed',
+      targetIsCharacter:combatantSide(member,actor)==='characters',targetIsToken:Boolean(tokenInfo(actor).tokenId),attribution:source?(source.attribution??'explicit'):'unattributed',
       rawAmount:null,mitigatedAmount:null,overkillAmount:overkill??0,
       ...delta, effectiveAmount:damage||heal
     };
@@ -638,7 +707,7 @@ export class CombatTracker {
       const src=sourceMember?actorForCombatant(sourceMember):null;
       const ensureRecord=(actor,cb,meta={})=>{
         if(!cb)return null;
-        const bucket=meta.isCharacter ?? (actor?characterActor(actor):false) ? 'characters':'enemies';
+        const bucket=combatantSide(cb,actor);
         const id=combatantKey(cb);
         state[bucket]??={};
         return state[bucket][id]??={...recordDefault(actor??{
@@ -652,14 +721,14 @@ export class CombatTracker {
       const amountHealing=incoming.vigorHealing+incoming.woundHealing+incoming.hpHealing;
       const knownOverkill=Number.isFinite(incoming.overkillAmount)?Math.max(0,Math.min(amountDamage,incoming.overkillAmount)):0;
       if(dest){
-        if(incoming.type==='downed') dest.timesDowned++;
+        if((incoming.type==='downed'||incoming.type==='death') && incoming.newDown!==false) dest.timesDowned++;
         dest.damageTaken+=amountDamage;dest.soakTaken+=incoming.soakDamage;
         dest.vigorTaken+=incoming.vigorDamage;dest.woundTaken+=incoming.woundDamage+incoming.hpDamage;
         if(amountDamage && !owner) dest.unattributedDamageTaken+=amountDamage;
         dest.healingReceived+=amountHealing;
         dest.excessDamageTaken+=knownOverkill;
       }
-      if(incoming.type==='downed' && incoming.isDeath && dest){
+      if((incoming.type==='downed'||incoming.type==='death') && incoming.isDeath && dest){
         state.defeated??=[];
         const uuid=incoming.targetCombatantKey??incoming.targetActorUuid??incoming.targetActorId;
         if(!state.defeated.some(x=>x.uuid===uuid)) {

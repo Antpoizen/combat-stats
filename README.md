@@ -1,4 +1,4 @@
-# PF1e Combat Stats — v1.0.0-rc5 (development / integration-test build)
+# PF1e Combat Stats — v1.0.13 (development / integration-test build)
 
 A Pathfinder 1e (system **11.11**) adaptation of **Combat Stats v4.0.0**, originally by **Smantella**. Targets **Foundry 13.351**. Active PF1e required; **no D&D5e or Midi-QOL dependency**.
 
@@ -38,7 +38,7 @@ Because the upstream ZIP did not include README/LICENSE, full upstream license r
 ## Install
 
 1. Back up your world.
-2. Install `pf1e-combat-stats/` in Foundry `Data/modules`, or attach `module.json` + the matching ZIP to a GitHub **v1.0.0-rc5** release.
+2. Install `pf1e-combat-stats/` in Foundry `Data/modules`, or push source and tag **v1.0.13** so GitHub Actions attaches `module.json` and `v1.0.13.zip`.
 3. Enable the module in a PF1e 11.11 world running Foundry 13.351.
 4. Configure **Vigor resource path**, **Wounds resource path**, and **HP fallback** in module settings after inspecting one PC and one NPC.
 5. Begin a new combat; apply damage as usual. The GM's client must be online and active.
@@ -160,6 +160,20 @@ Compare `trackedSnapshot` with `currentHealth` and `matched` for each initiative
 **Attribution warning:** the setting `turnAttributionFallback` infers attacker from whose initiative turn it is when a verified actor source is unavailable. It can misattribute reactions, delayed effects and ready actions. The module does not currently calculate overkill correctly for Wounds/Vigor and cannot automatically recover events from earlier builds.
 
 
+
+## v1.0.13 — complete initiative roster and credited kills
+
+- **Everyone in initiative appears immediately**, including players/enemies with 0 damage dealt, 0 damage taken and 0 kills. Participants with temporarily unavailable synthetic actors get provisional roster entries that are filled in once Foundry resolves the actor.
+- **Who counts as a PC/enemy?** Friendly token disposition (+1) puts the combatant in the player/ally section; hostile (-1) puts it in the enemy section. For other/unavailable dispositions, actor `type` (`character` vs `npc`) and player ownership serve as fallbacks. GM should ensure encounter token disposition reflects the desired side.
+- Combat statistics use unique Combatant IDs for roster rows and full actor UUIDs for damage correlation. Two unlinked tokens sharing one world Actor remain distinct.
+- The Charts menu now includes an **In Progress** fight while a combat is tracked, so you can see zero-damage participants before the fight ends. Reopen/refresh the menu for updated live numbers. Exports and history deletion operate on completed combats only.
+- Player chat Apply Damage attribution sends a user ID in the socket payload. GM verifies it against the message author (or permits GM clicks) and the sender's ownership for non-GMs before associating any subsequent *observed* damage.
+- An unconscious/dying enemy can later be marked Defeated: it gains one downed count and at most one kill. Kill attribution uses the last identified damaging source during the encounter, not a narrow 15-second timeout. If the source was inferred from initiative order, the kill credit is **inferred**, not verified.
+- Max single hit records the largest captured *applied-resource loss* transaction, combining Soak/Vigor/Wounds where possible. It is not the raw attack-roll amount. Overkill remains unknowable when health is clamped at zero.
+- Enable **Diagnostic logging** under settings and run `console.table(game.modules.get('pf1e-combat-stats').api.getDiagnostics())` to inspect roster/side/resource values. For accurate attribution validate damage from a player client as well as from the GM.
+
+**Verification status:** Source parses, ZIP validation and local simulations passed, including an 8-combatant mixed-disposition encounter, client socket validation, repeated defeat transitions, and both Bloodling scenarios. Live Foundry/Nevela/Armor Soak testing is still required; this is not a guarantee of production behavior.
+
 ## v1.0.11 — Actor UUID combatant attribution
 
 This version uses the **full Actor UUID** to correlate applied resource changes and source actions, with a stable **Combatant ID** to ensure only initiative participants appear in the fight report. For unlinked tokens the full UUID includes the scene and token identity. All combatants get zero-valued report rows even if they do not attack.
@@ -168,7 +182,7 @@ This version uses the **full Actor UUID** to correlate applied resource changes 
 
 **Damage dealt:** When no explicit chat/automation source is available, the optional current-turn attribution setting (enabled by default) provides an *inferred* attacker; reactions and delayed effects can be miscredited. Damage taken still comes from actual resource changes.
 
-**Kills:** A defeated marker credits the most recent attributed hit within 15 seconds. If no matching damaging event exists, the defeat is recorded with no killer.
+**Kills:** A defeated marker credits the most recent attributed damaging hit within the active encounter, if one was identified. If no matching damaging event exists, the defeat is recorded with no killer.
 
 **Max single hit:** Highest post-mitigation damage event, grouped across Soak/Vigor/Wounds where possible.
 

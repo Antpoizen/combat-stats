@@ -2,7 +2,7 @@
 // Read-only; does not change actors or combat statistics.
 const stats = game.modules.get('pf1e-combat-stats')?.api;
 if (!stats?.getDiagnostics) {
-  ui.notifications.warn('PF1e Combat Stats v1.0.11 or later is not active.');
+  ui.notifications.warn('PF1e Combat Stats v1.0.13 or later is not active.');
 } else if (!game.combat?.combatants?.some?.(c=>c.initiative != null) && !game.combat?.started) {
   ui.notifications.warn('Add combatants and roll initiative before running this diagnostic.');
 } else {

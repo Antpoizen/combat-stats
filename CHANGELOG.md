@@ -1,3 +1,15 @@
+# v1.0.13
+
+- Complete initiative roster, including unresolved actor documents and zero-damage characters/enemies.
+- Classify combat participants by token disposition first (+1 friendly, -1 hostile), with PF1e actor type/ownership fallbacks.
+- Resolve full Actor UUID for damage and Combatant IDs for encounter-specific records.
+- Allow client-to-GM chat attribution by sending a validated sender ID with socket payload; permit GM-initiated Apply clicks on player chat cards.
+- Fix unconscious-to-Defeated transitions so downed and death events are distinct; award each target at most one kill.
+- Retain last attributed damaging source throughout the active combat for deferred GM Defeated marks.
+- Show the current (In Progress) combat in Charts, including zero-value roster entries; keep exports/history operations archived-only.
+- Extend regression suite with eight initiative entries, two shared-actor Bloodlings, ActorDelta updates, player socket messages and kill transitions.
+- Live Foundry 13.351 / PF1e 11.11 / Nevela / Armor Soak validation still required.
+
 # v1.0.11
 
 - Unified attacker/recipient identity around full Actor UUIDs, resolving initiative membership via Combatant IDs.

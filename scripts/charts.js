@@ -12,6 +12,18 @@ const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 const MODULE_ID   = "pf1e-combat-stats";
 const S_HISTORY   = "combatHistory";
 const S_HISTORY_BACKUP = "combatHistoryBackup";
+// Include the active encounter as an in-memory display-only fight. Previously
+// Charts rendered combatHistory alone, so initiative combatants (including
+// zero-action actors) remained invisible until the fight was deleted.
+export function chartFights() {
+  const archived=game.settings.get(MODULE_ID,S_HISTORY)??[];
+  const current=game.settings.get(MODULE_ID,'currentCombatData')??{};
+  if(!current.combatId) return archived;
+  const count=Object.keys(current.characters??{}).length+Object.keys(current.enemies??{}).length;
+  if(!count || archived.some(f=>f.combatId===current.combatId)) return archived;
+  return [...archived,{...current,id:`live-${current.combatId}`,
+    name:`${current.fightName??'Combat'} (In Progress)`,date:current.startedAt,isLive:true}];
+}
 const UNDO_CLEAR_TTL_MS = 60000;
 // Bundled local canvas fallback. Do not require an online Chart.js CDN.
 const Chart = ChartLite;
@@ -136,7 +148,7 @@ export class ChartsApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   async _prepareContext(options) {
-    const history = game.settings.get(MODULE_ID, S_HISTORY) ?? [];
+    const history = chartFights();
     const isGM = game.user.isGM;
     const g = k => { try { return game.settings.get(MODULE_ID, k); } catch { return null; } };
     const nameDisplay = g("nameDisplay") ?? "full";
@@ -381,7 +393,7 @@ export class ChartsApp extends HandlebarsApplicationMixin(ApplicationV2) {
       this._chart = null; 
     }
 
-    const history = game.settings.get(MODULE_ID, S_HISTORY) ?? [];
+    const history = chartFights();
     const g = k => { try { return game.settings.get(MODULE_ID, k); } catch { return null; } };
     const nameDisplay = g("nameDisplay") ?? "full";
 
